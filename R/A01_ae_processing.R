@@ -1,8 +1,7 @@
 ## Script for creating lookup values and working on AE data
 
 library(data.table)
-library(ggplot2)
-library(lubridate)
+library(igraph)
 
 source("R/cleaning_fns_etl.r")
 source("R/outcome_functions.R")
@@ -145,7 +144,7 @@ stopifnot(ae_data[, .N, by = .(STUDY_ID, ENCRYPTED_HESID)][, .N, by = STUDY_ID][
 study_id_encrypted_hesid_lookup <- unique(ae_data[, .(STUDY_ID, ENCRYPTED_HESID)])
 
 save_time <- getDateTimeForFilename()
-saveRDS(study_id_encrypted_hesid_lookup, "data/linkage/study_id_encrypted_hesid_lookup.rds")
+saveRDS(study_id_encrypted_hesid_lookup, paste0("data/linkage/study_id_hesid_lookup_", save_time, ".rds"))
 
 
 
