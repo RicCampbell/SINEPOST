@@ -97,6 +97,16 @@ fn_removeValues <- function(field, values_to_remove, case_sensitive = FALSE) {
   return(field)
 }
 
+getNamesOfEmptyFields <- function(dt) {
+  empty_field <- sapply(dt, function(field) { all(is.na(field))})
+  return(names(empty_field)[empty_field])
+}
+
+getDateTimeForFilename <- function() {
+  return(gsub(" ", "-", gsub(":", "", Sys.time(), fixed = TRUE), fixed = TRUE))
+}
+
+
 fn_splitForenamesSurnames <- function(names) {
   max_name_len <- max(nchar(names), na.rm = TRUE)
 
