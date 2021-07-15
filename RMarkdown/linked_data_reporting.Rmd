@@ -1,0 +1,302 @@
+---
+title: "yas_ae_linkage_report"
+author: "Ric Campbell"
+date: "15/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(tinytex)
+library(knitr)
+library(kableExtra)
+library(googlesheets4)
+library(googledrive)
+library(lubridate)
+library(ggplot2)
+```
+
+```{r read_in_data, echo=FALSE}
+
+  yas_data <- load("D:/SINEPOST/SINEPOSTDM/data/datasets/epr_tables_datetime_changes-2021-07-14-100514.rda")
+  ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/ae_processed_2021-07-12-110009.rds")
+  yas_ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/yas_ae_linked_2021-07-14-125617.rds")
+  study_id_encrypted_hesid_lookup <- readRDS("D:/SINEPOST/SINEPOSTDM/data/linkage/study_id_hesid_lookup_2021-07-12-105942.rds")
+
+```
+
+```{r link_yas_to_ae_data, echo = FALSE}
+
+## Merge epr single table with epr point of care to get hospital information for all eprs (point of care is 1-to-1 to epr)
+  
+  stopifnot(epr_point_of_care_table[, .N, by = epr_id][N > 1, .N] == 0)
+  
+  epr_single_value_fields_table_poc <- merge(epr_single_value_fields_table,
+                                             epr_point_of_care_table,
+                                             by = "epr_id",
+                                             all.x = TRUE)
+  
+  
+## Merge in HESID to yas data single table then can used epr_id to link
+  
+  epr_single_value_fields_table_poc_HES_id <- merge(epr_single_value_fields_table_poc,
+                                                    study_id_encrypted_hesid_lookup,
+                                                    by.x = "patient_id",
+                                                    by.y = "STUDY_ID",
+                                                    all.x = TRUE)
+  
+
+## Merge in all AE arrival times for each person (HESID)
+
+  yas_hes_linkage <- merge(epr_single_value_fields_table_poc_HES_id[transported_to_hospital == TRUE & receiving_hospital_department %chin% c("ED", "ED - Self Handover", "ED Self-handover/minors","ED Resus"),
+                                                                    .(ENCRYPTED_HESID, incident_datetime, epr_id, patient_id)],
+                           ae_data[, .(ENCRYPTED_HESID, ARRIVALTIME, AEKEY)],
+                           by = "ENCRYPTED_HESID",
+                           all.x = TRUE)
+
+
+## Calculate the time between ambulance incident time, and arrival at A&E
+
+  yas_hes_linkage[, incident_to_arrival_time := as.numeric(difftime(ARRIVALTIME, incident_datetime, unit = "hours"))]
+  
+  yas_hes_linkage[, incident_to_arrival_time_clipped := pmax(pmin(incident_to_arrival_time, 24.0), -24.0)]
+  
+  yas_hes_linkage[, incident_to_arrival_time_absolute := abs(incident_to_arrival_time)]
+
+
+## Set order to find smallest absolute time between ambulance incident time and A&E arrival time - need an extra field to make sure sort is same everytime
+
+  setorder(yas_hes_linkage, incident_to_arrival_time_absolute, na.last = TRUE)
+  
+  yas_hes_linkage[!is.na(incident_to_arrival_time_absolute), order := 1:.N, by = epr_id]
+
+
+### Select the smallest absolute time that was within 24 hours, but also remove any cases that were within the first and last day of data
+
+  smallest_time_diff_per_amb_inc_24_hour <- yas_hes_linkage[order == 1 &
+                                                              incident_datetime >= floor_date(min(incident_datetime), unit = "day") + days(1) &
+                                                              incident_datetime < floor_date(max(incident_datetime), unit = "day")]
+
+  
+## Need to order the other way so as to keep AEKEY-epr_id 1-to-1, per_id added to sort to keep same each time
+## Will this get rid of epr-(HES, incident_times) multiples, as HES-AEKEY-epr is now all 1-to-1?
+  
+  setorder(smallest_time_diff_per_amb_inc_24_hour, incident_to_arrival_time_absolute, epr_id, na.last = TRUE)
+  
+  smallest_time_diff_per_amb_inc_24_hour[!is.na(incident_to_arrival_time_absolute), order := 1:.N, by = AEKEY]
+  
+  smallest_time_diff_per_amb_inc_24_hour <- smallest_time_diff_per_amb_inc_24_hour[order == 1]  
+
+```
+
+```{r create_numbers_to_report, echo = FALSE}
+
+## AE data on own
+## number of distinct patients (HES_ID), and distinct records (AEKEY)
+  ae_distinct_records <- uniqueN(ae_data[, AEKEY])
+  ae_distinct_patient <- uniqueN(ae_data[, ENCRYPTED_HESID])
+
+# no. records YAS
+  num_yas_incidents <- epr_single_value_fields_table[, .N]
+  
+# no./percent that did/didn't have patient id
+  num_yas_incidents_patient_ids <- epr_single_value_fields_table[!is.na(patient_id), .N]
+  percent_yas_patient_ids <- round((num_yas_incidents_patient_ids/num_yas_incidents)*100, digits = 2)
+
+# no./percent of STUDY_IDs not traced - YAS
+  num_yas_not_traced_study <- uniqueN(epr_single_value_fields_table_poc_HES_id[is.na(ENCRYPTED_HESID) & !is.na(patient_id), patient_id])
+  percent_yas_not_traced_study <- round((num_yas_not_traced_study/uniqueN(epr_single_value_fields_table[, patient_id])*100), digits = 2)
+  
+  
+# no./percent of incidents that were traced
+  num_yas_traced_patients <- uniqueN(epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID), ENCRYPTED_HESID])
+  num_yas_traced_incidents <- uniqueN(epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID), epr_id])
+  percent_yas_traced_incidents <- round((uniqueN(epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID), epr_id])*100)/num_yas_incidents, digits = 2)
+  percent_yas_patient_ids_traced_incidents <- round((uniqueN(epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID) & !is.na(patient_id),
+                                                                                               epr_id])*100)/num_yas_incidents_patient_ids, digits = 2)
+  
+
+# YAS incidents conveyed to hospital
+  
+  yas_conveyed <- epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID) & transported_to_hospital == TRUE & receiving_hospital_department %chin% c("ED", "ED - Self Handover", "ED Self-handover/minors","ED Resus")]
+
+  num_yas_incidents_patient_ids_conveyed <- yas_conveyed[!is.na(patient_id), .N]
+  percent_yas_patient_id_incidents_converyed <- round((yas_conveyed[!is.na(patient_id),
+                                                                    .N]/epr_single_value_fields_table_poc_HES_id[!is.na(ENCRYPTED_HESID) &!is.na(patient_id), .N])*100, digits = 2)
+  
+
+## YAS-AE linked
+
+# Incidents that have AE data
+  
+  number_incidents_ae_data <- uniqueN(yas_ae_data[!is.na(AEKEY), epr_id])
+  percentage_incidents_ae_data <- round((uniqueN(yas_ae_data[!is.na(AEKEY), epr_id])*100)/num_yas_incidents_patient_ids_conveyed, digits = 2)
+  
+  
+## Incidents that were in the first data of YAS data that were linked
+
+  incidents_removed_first_day <- yas_hes_linkage[order == 1 & 
+                                              incident_datetime < floor_date(min(incident_datetime), unit = "day") + days(1), .N]
+  
+  incidents_removed_last_day <- yas_hes_linkage[order == 1 & 
+                                              incident_datetime >= floor_date(max(incident_datetime), unit = "day"), .N]
+  
+  
+  
+### Distribution of epr-AE linked records within 24 of each other
+
+  # ggplot(smallest_time_diff_per_amb_inc_24_hour[incident_to_arrival_time_absolute <= 5], aes(x = incident_to_arrival_time_clipped)) +
+  #   geom_histogram(binwidth = 1) +
+  #   ggtitle("Distribution of time between ambulance incident and A&E arrival")
+
+
+```
+
+```{r put_tables_together, echo = FALSE}
+## To report on:
+
+## Reattenders
+## Low Acuity numbers - use function
+
+
+
+# how many record in first day of YAS data that were useful
+# how many in last 6 hours of YAS data that were useful
+
+```
+
+## AE Data
+
+
+Table that shows the number of records and patients (unique HES_IDs) present in the AE data received from NHS Digital
+
+```{r ae_tables, echo=FALSE}
+
+ae_table <- data.table(number_of_records = ae_distinct_records, number_of_patients = ae_distinct_patient)
+
+kable_styling(kable(ae_table, format = "html"))
+
+```
+
+
+
+## YAS Data
+
+
+Table that shows the number/percentage of incidents (epr_ids) present in the ambulance data received from YAS.  
+Patient ids were created in the YAS data if the record contained either a NHS number or all three of date of birth, sex and incident postcode.  
+(N.B - Patient ids in the YAS data and do not always relate to a single unique patient, they are are named Study ids in the NHSD data.
+
+```{r yas_tables1, echo=FALSE}
+
+yas_table_1 <- data.table(number_yas_incidents = num_yas_incidents, number_of_incidents_with_patient_id = num_yas_incidents_patient_ids,
+                        percentage_of_incidents_with_patient_id = percent_yas_patient_ids)
+  
+kable_styling(kable(yas_table_1, format = "html"))
+
+
+```
+
+
+Table showing the number/percentage of patient ids in the YAS data that were not traced by NHS Digital.  
+A patient id was considered to be traced if a corresponding HES id was returned in the AE dataset.  
+
+```{r yas_tables2, echo=FALSE}
+
+yas_table_2 <- data.table(number_yas_patient_ids_not_traced = num_yas_not_traced_study,
+                          percentage_yas_patient_ids_not_traced = percent_yas_not_traced_study)
+  
+kable_styling(kable(yas_table_2, format = "html"))
+
+
+```
+
+
+
+## YAS data that was traced
+
+
+Table showing the number of patients and incidents that have been traced in the YAS data.  
+A patient id was considered to be traced if a corresponding HES id was returned in the AE dataset.  
+  
+Percentages show the number of incidents traced related to:  
+  1) the total number of incidents in the YAS dataset (including those without patient ids)  
+  2) the number of incidents where a patient id was present, therefore representing the number of incidents it was theoretically possible to trace  
+
+
+```{r yas_tables3, echo=FALSE}
+
+yas_table_3 <- data.table(number_of_patients_traced_in_yas_data = num_yas_traced_patients,
+                          number_of_incidents_traced = num_yas_traced_incidents,
+                          percentage_of_all_incidents_traced = percent_yas_traced_incidents,
+                          percentage_of_incidents_with_patient_id_traced = percent_yas_patient_ids_traced_incidents)
+  
+kable_styling(kable(yas_table_3, format = "html"))
+
+
+```
+
+
+
+### Conveyance
+
+
+Table showing the number of incidents **that were traced** in the YAS dataset, that stated the patient was transported to the Emergency Department.  
+A patient was considered to have been conveyed to AE if:  
+  transported_to_hospital(poctransported) == TRUE  
+    AND   
+  receiving_hospital_department (pocdepartment) referred to an ED  
+  
+Percentages show the number of incidents traced related to the number of incidents where a patient id was present, therefore representing the number of incidents it was theoretically possible to trace  
+
+
+```{r yas_tables4, echo=FALSE}
+
+yas_table_4 <- data.table(number_of_incidents_with_patient_id_conveyed = num_yas_incidents_patient_ids_conveyed,
+                          percentage_of_incidents_with_patients_id_stated_were_conveyed = percent_yas_patient_id_incidents_converyed)
+  
+kable_styling(kable(yas_table_4, format = "html"))
+
+
+```
+
+
+
+### YAS-AE data (within 0 - 6 hours of ambulance arrival time)
+
+
+Table showing the number and percentage of ambulance incidents **that stated the patient was conveyed** that have a AE record attached to them.  
+All ambulance incidents (where possible) were linked to only the most recent AE record using absolute time.  
+All AE records were linked to only the most recent ambulance incident.  
+This means that single ambulance incident has been linked to a single AE record.  
+Percentage is in relation to the number of incidents that were traced.  
+
+```{r yas_tables5, echo=FALSE}
+
+yas_table_5 <- data.table(number_of_incidents_that_have_AE_data = number_incidents_ae_data,
+                          percentage_of_traced_incidents_that_have_AE_data = percentage_incidents_ae_data)
+                          
+kable_styling(kable(yas_table_5, format = "html"))
+
+
+```
+
+
+
+## Incidents that were in the first and last day of YAS data that were linked
+
+
+Incidents that were on the first and last day of the YAS data were removed due to YAS and NHSD data having the same start and end date.    
+A full 24 hours either side of the incident datetime was required to check for the closest AE record.  
+(Numbers below have already been removed from the counts in the table above).  
+
+```{r yas_table6, echo = FALSE}
+
+yas_table_6 <- data.table(number_of_incidents_removed_on_first_day_of_data = incidents_removed_first_day,
+                          number_of_incidents_removed_on_last_day_of_data = incidents_removed_last_day)
+  
+kable_styling(kable(yas_table_6, format = "html"))
+
+```

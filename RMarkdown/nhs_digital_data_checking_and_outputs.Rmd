@@ -1,0 +1,359 @@
+---
+title: "NHS Digital Data Checking"
+author: "Ric Campbell"
+date: "2021-06-29"
+output: html_document
+---
+
+## Internal UoS PRIEST team only, please do not share more widely
+
+```{r get google login access, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(tinytex)
+library(knitr)
+library(kableExtra)
+library(googlesheets4)
+library(googledrive)
+library(lubridate)
+library(ggplot2)
+
+
+fn_covertStrToDate <- function(date_in, dt_format = "%Y-%m-%d") {
+  date_out <- as.Date(lubridate::fast_strptime(paste(date_in, "12:00:00"), format = paste(dt_format, "%H:%M:%S"), tz = "Europe/London", lt = FALSE))
+  date_out <- replace(date_out, date_out %in% as.Date("1900-01-01"), NA)
+  return(date_out)
+}
+
+fn_removeBlanks <- function(field) {
+  field <- trimws(field)
+  return(replace(field, field == "", NA))
+}
+
+
+## Give script permission to use auth token found in cache
+
+warning("You must have connected to your Google account proir to running this script as it uses the auth token found in the cache")
+# gs4_auth() - may need re-doing even if have not shut down RStudio
+# Then run markdown from console:
+# rmarkdown::render("RMarkdown/nhs_digital_data_checking_and_outputs.Rmd")
+
+options(gargle_oauth_email = TRUE)
+
+```
+
+
+```{r, read in data, echo = FALSE}
+
+## Read in all data from NHS Digital (and YAS data for percentages later)
+
+ecds <- fread("D:/data/nhs_digital/ecds/FILE0119464_NIC284866_HES_ECDS_201999.txt",
+              colClasses = "character",
+              na.strings = "")
+
+ae <- fread("D:/data/nhs_digital/ae/FILE0119465_NIC284866_HES_AE_201999.txt",
+            colClasses = "character",
+            na.strings = "")
+
+yas <- data.table(readRDS("D:/data/yas/sinepost.rds"))
+
+
+## Read in receipt file for extra numbers
+
+ecds_receipt <- fread("D:/data/nhs_digital/ecds/FILE0119464_NIC284866_HES_ECDS_201999.txt_CPOS-631961_Completed.csv",
+                      colClasses = "character")
+ae_receipt <- fread("D:/data/nhs_digital/ae/FILE0119465_NIC284866_HES_AE_201999.txt_CPOS-626812_Completed.csv",
+                    colClasses = "character")
+
+```
+
+
+```{r, create number for table, echo = FALSE}
+
+# Convert date fields to dates
+
+ecds[, ARRIVAL_DATE := fn_covertStrToDate(ARRIVAL_DATE)]
+ae[, ARRIVALDATE := fn_covertStrToDate(ARRIVALDATE)]
+yas[, incdate := as.Date(incDate, format = "%Y-%m-%d")]
+
+
+## Read in col names that we asked for from Google Sheet
+
+nhs_digital_requested_data <- as.character(as_sheets_id("https://https://docs.google.com/spreadsheets/d/1djY-ldYUVBwUUcmso1quWkn3NebpIm3Hrx74WASlVRs/edit#gid=583528663"))
+
+
+## Read in sites sheet from google drive - correctly formatted field name has been done
+
+## Might have to put a delay in as too many read requests in short space of time?
+
+suppressMessages(ecds_requested <- data.table(range_read(nhs_digital_requested_data,
+                                                         sheet = "ECDS", col_types = "c")))
+
+suppressMessages(ae_requested <- data.table(range_read(nhs_digital_requested_data,
+                                                       sheet = "AE", col_types = "c")))
+
+
+## Change all col names to upper case and take col names
+
+ecds_colnames <- colnames(setnames(ecds, colnames(ecds), toupper(colnames(ecds))))
+ae_colnames <- colnames(setnames(ae, colnames(ae), toupper(colnames(ae))))
+
+
+## Make changes to requested list to add entries that have multiple fields
+
+## ECDS - number of fields that should be present created to match up with data provided
+## All fields have a group (or field) repeat of 1...* as found in the technical output specification (V3.0) available on NHS Digital website
+
+ecds_requested_names <- c(ecds_requested[field_name != "COMORBIDITIES" & field_name != "COMORBIDITIES_VALID_APPROVED" & field_name != "DIAGNOSIS_CODE"
+                                         & field_name != "DIAGNOSIS_FIRST" & field_name != "DIAGNOSIS_IS_AEC_RELATED" & field_name != "DIAGNOSIS_IS_ALLERGY_RELATED"
+                                         & field_name != "DIAGNOSIS_IS_APPLICABLE_TO_FEMALES" & field_name != "DIAGNOSIS_IS_APPLICABLE_TO_MALES"
+                                         & field_name != "DIAGNOSIS_IS_INJURY_RELATED" & field_name != "DIAGNOSIS_IS_NOTIFIABLE_DISEASE"
+                                         & field_name != "DIAGNOSIS_QUALIFIER" & field_name != "DIAGNOSIS_QUALIFIER_IS_APPROVED" 
+                                         & field_name != "DIAGNOSIS_VALID_APPROVED" & field_name != "DRUG_ALCOHOL_CODE" 
+                                         & field_name != "DRUG_ALCOHOL_CODE_VALID_APPROVED" & field_name != "INVESTIGATION_CODE" 
+                                         & field_name != "INVESTIGATION_DATE" & field_name != "INVESTIGATION_TIME" & field_name != "INVESTIGATIONS_VALID_APPROVED"
+                                         & field_name != "REFERRAL_ASSESSMENT_DATE" & field_name != "REFERRED_TO_SERVICE" 
+                                         & field_name != "REFERRED_TO_SERVICE_VALID_APPROVED" & field_name != "SEQUENCE_NUMBER"
+                                         & field_name != "SERVICE_REQUEST_DATE" & field_name != "SERVICE_REQUEST_TIME" & field_name != "TREATMENT_CODE"
+                                         & field_name != "TREATMENT_DATE" & field_name != "TREATMENT_TIME" & field_name != "TREATMENTS_VALID_APPROVED", field_name],
+                          paste0("COMORBIDITIES_", 1:10), paste0("COMORBIDITIES_VALID_APPROVED_", 1:10), paste0("DIAGNOSIS_CODE_", 1:12),
+                          paste0("DIAGNOSIS_FIRST_", 1:12), paste0("DIAGNOSIS_IS_AEC_RELATED_", 1:12),paste0("DIAGNOSIS_IS_ALLERGY_RELATED_", 1:12),
+                          paste0("DIAGNOSIS_IS_APPLICABLE_TO_FEMALES_", 1:12), paste0("DIAGNOSIS_IS_APPLICABLE_TO_MALES_", 1:12),
+                          paste0("DIAGNOSIS_IS_INJURY_RELATED_", 1:12), paste0("DIAGNOSIS_IS_NOTIFIABLE_DISEASE_", 1:12), paste0("DIAGNOSIS_QUALIFIER_", 1:12),
+                          paste0("DIAGNOSIS_QUALIFIER_IS_APPROVED_", 1:12), paste0("DIAGNOSIS_VALID_APPROVED_", 1:12), paste0("DRUG_ALCOHOL_CODE_", 1:4),
+                          paste0("DRUG_ALCOHOL_CODE_VALID_APPROVED_", 1:4), paste0("INVESTIGATION_CODE_", 1:12), paste0("INVESTIGATION_DATE_", 1:12),
+                          paste0("INVESTIGATION_TIME_", 1:12), paste0("INVESTIGATIONS_VALID_APPROVED_", 1:12), paste0("REFERRAL_ASSESSMENT_DATE_", 1:4),
+                          paste0("REFERRED_TO_SERVICE_", 1:4), paste0("REFERRED_TO_SERVICE_VALID_APPROVED_", 1:4), paste0("SEQUENCE_NUMBER_", 1:12),
+                          paste0("SERVICE_REQUEST_DATE_", 1:4), paste0("SERVICE_REQUEST_TIME_", 1:4), paste0("TREATMENT_CODE_", 1:12),
+                          paste0("TREATMENT_DATE_", 1:12), paste0("TREATMENT_TIME_", 1:12), paste0("TREATMENTS_VALID_APPROVED_", 1:12))
+
+
+## AE - number of fields that should be present created to match up with data provided
+## Number of fields that should be present taken from data dictionary ("only the first 12 [X] are available within HES")
+
+ae_requested_names <- c(ae_requested[field_name != "DIAG_NN" & field_name != "DIAG2_NN" & field_name != "DIAG3_NN" & field_name != "DIAGA_NN" 
+                                     & field_name != "DIAGS_NN" & field_name != "INVEST_NN" & field_name != "INVEST2_NN" & field_name != "TREAT_NN" 
+                                     & field_name != "TREAT2_NN" & field_name != "TREAT3_NN", field_name],
+                        paste0("DIAG_", formatC(1:12, width = 2, format = "d", flag = "0")), paste0("DIAG2_", formatC(1:12, width = 2, format = "d", flag = "0")),
+                        paste0("DIAG3_", formatC(1:12, width = 2, format = "d", flag = "0")), paste0("DIAGA_", formatC(1:12, width = 2, format = "d", flag = "0")),
+                        paste0("DIAGS_", formatC(1:12, width = 2, format = "d", flag = "0")), paste0("INVEST_", formatC(1:12, width = 2, format = "d", flag = "0")),
+                        paste0("INVEST2_", formatC(1:12, width = 2, format = "d", flag = "0")), paste0("TREAT_", formatC(1:12, width = 2, format = "d", flag = "0")),
+                        paste0("TREAT2_", formatC(1:12, width = 2, format = "d", flag = "0")), paste0("TREAT3_", formatC(1:12, width = 2, format = "d", flag = "0")))
+
+
+## Check that we have received all the cols asked for, and if have received any more
+
+missing_ecds_cols <- ecds_requested_names[!ecds_requested_names %in% ecds_colnames]
+extra_ecds_cols <- ecds_colnames[!ecds_colnames %in% ecds_requested_names]
+
+missing_ae_cols <- ae_requested_names[!ae_requested_names %in% ae_colnames]
+extra_ae_cols <- ae_colnames[!ae_colnames %in% ae_requested_names]
+
+
+## Get list on unique patient_ids from YAS data to see how many are in each data set
+
+ecds_patients <- unique(ecds[, STUDY_ID])
+ae_patients <- unique(ae[, STUDY_ID])
+yas_patients <- unique(yas[, patient_id])
+
+
+## Find number of unique records, unique study_ids (or similar) for each dataset before building table
+
+### EDCS
+
+ecds_records <- unique(ecds)[, .N]
+ecds_study_ids <- length(ecds[!is.na(STUDY_ID), unique(STUDY_ID)])
+yas_study_ids_in_ecds_percent <- round(uniqueN(yas[patient_id %in% ecds_patients, patient_id])/length(yas_patients)*100, digits = 2)
+
+ecds_study_ids_in_yas_percent <- round(uniqueN(ecds[STUDY_ID %in% yas_patients, STUDY_ID])/ecds_study_ids*100, digits = 2)
+
+
+### AE
+## number of records when KEY fields are removed?
+## all_non_key_cols <- ae_requested_names[!ae_requested_names %in% "AEKEY"]
+
+ae_records <- unique(ae)[, .N]
+ae_study_ids <- length(ae[!is.na(STUDY_ID), unique(STUDY_ID)])
+ae_study_ids_percent <- round(uniqueN(yas[patient_id %in% ae_patients, patient_id])/length(yas_patients)*100, digits = 2)
+
+ae_study_ids_in_yas_percent <- round(uniqueN(ae[STUDY_ID %in% yas_patients, STUDY_ID])/ae_study_ids*100, digits = 2)
+
+
+### YAS
+
+yas_records <- unique(yas)[, .N]
+yas_study_ids <- length(yas[!is.na(patient_id), unique(patient_id)])
+
+yas_records_not_traced <- yas[(!patient_id %in% ecds_patients) & !(patient_id %in% ae_patients)]
+yas_patients_not_traced <- uniqueN(yas_records_not_traced[!is.na(patient_id), patient_id])
+
+
+## Percent of study ids that are in both datasets?
+
+
+## Create table with numbers of rows, distinct records, unique study_ids, min/max dates
+
+dataset_numbers <- data.table(dataset = "ECDS", number_of_rows = ecds[, .N], number_of_records = ecds_records, 
+                              number_study_ids = ecds_study_ids, percent_of_yas_study_ids_present = yas_study_ids_in_ecds_percent,
+                              percent_study_ids_in_yas = ae_study_ids_in_yas_percent, number_of_rows_removed_nhsd = as.integer(ecds_receipt$`Number of Rows Removed`),
+                              number_of_unique_patients_removed_nhsd = as.integer(ecds_receipt$`Number of Unique Patients Removed`),
+                              min_date = as.character(ecds[!is.na(ARRIVAL_DATE), min(ARRIVAL_DATE)]),
+                              max_date = as.character(ecds[!is.na(ARRIVAL_DATE), max(ARRIVAL_DATE)]))
+
+dataset_numbers <- rbind(dataset_numbers, list("A&E", ae[, .N], ae_records, ae_study_ids, ae_study_ids_percent, ae_study_ids_in_yas_percent,
+                                               as.integer(ae_receipt$`Number of Rows Removed`), as.integer(ae_receipt$`Number of Unique Patients Removed`), 
+                                               as.character(ae[!is.na(ARRIVALDATE), min(ARRIVALDATE)]),
+                                               as.character(ae[!is.na(ARRIVALDATE), max(ARRIVALDATE)])))
+
+dataset_numbers <- rbind(dataset_numbers, list("YAS", yas[, .N], yas_records, yas_study_ids, 100L, 100L, NA, NA,
+                                               as.character(yas[!is.na(incdate), min(incdate)]),
+                                               as.character(yas[!is.na(incdate), max(incdate)])))
+
+```
+
+
+``` {r duplicate check and graph creation, echo = FALSE}
+
+## Separate full duplicate
+
+ecds[, duplicated_record := duplicated(ecds)]
+ae[, duplicated_record := duplicated(ae)]
+
+ecds_data_duplicates <- ecds[duplicated_record == TRUE]
+ecds_no_duplicates <- ecds[duplicated_record == FALSE]
+ae_data_duplicates <- ae[duplicated_record == TRUE]
+ae_no_duplicates <- ae[duplicated_record == FALSE]
+
+
+ecds_number_of_full_dups <- ecds[, .N] - ecds_no_duplicates[ ,.N]
+ecds_percentage_full_dups <- (ecds_number_of_full_dups/ecds[, .N])*100L
+ae_number_of_full_dups <- ae[, .N] - ae_no_duplicates[ ,.N]
+ae_percentage_full_dups <- (ae_number_of_full_dups/ae[, .N])*100L
+
+
+## Change col types as needed
+
+ecds_no_duplicates[, AGE_AT_ARRIVAL := as.integer(AGE_AT_ARRIVAL)]
+ae_no_duplicates[, ACTIVAGE := as.integer(ACTIVAGE)]
+
+
+## Floor dates for plotting
+
+ecds_no_duplicates[, incident_month := floor_date(ARRIVAL_DATE, unit = "month")]
+ecds_no_duplicates[, incident_week := floor_date(ARRIVAL_DATE, unit = "week")]
+ae_no_duplicates[, incident_month := floor_date(ARRIVALDATE, unit = "month")]
+ae_no_duplicates[, incident_week := floor_date(ARRIVALDATE, unit = "week")]
+
+
+## Create age groups
+
+ecds_no_duplicates[, age_group := cut(AGE_AT_ARRIVAL, c(seq(0, 120, 10), Inf), include.lowest = TRUE)]  
+ae_no_duplicates[, age_group := cut(ACTIVAGE, c(seq(0, 120, 10), Inf), include.lowest = TRUE)]
+
+
+## Create a few graphs of records over time
+
+## ECDS
+
+ecds_records_per_month_plot <- ggplot(ecds_no_duplicates[, .N, by = incident_month],
+                                      aes(x = incident_month, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("ECDS episodes per month")
+
+ecds_records_per_week_plot <- ggplot(ecds_no_duplicates[, .N, by = incident_week],
+                                     aes(x = incident_week, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("ECDS episodes per week")
+
+ecds_age_plot <- ggplot(ecds_no_duplicates[, .N, by = age_group],
+                        aes(x = age_group, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("ECDS episodes per age group")
+
+ecds_age_month_plot <- ggplot(ecds_no_duplicates[, .N, by = .(incident_month, age_group)],
+                              aes(x = incident_month, y = N, color = age_group)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("ECDS episodes by age group per month")
+
+
+## AE
+
+ae_records_per_month_plot <- ggplot(ae_no_duplicates[, .N, by = incident_month],
+                                    aes(x = incident_month, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("AE episodes per month")
+
+ae_records_per_week_plot <- ggplot(ae_no_duplicates[, .N, by = incident_week],
+                                   aes(x = incident_week, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("AE episodes per week")
+
+ae_age_plot <- ggplot(ae_no_duplicates[, .N, by = age_group],
+                      aes(x = age_group, y = N)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("AE episodes per age group")
+
+ae_age_month_plot <- ggplot(ae_no_duplicates[, .N, by = .(incident_month, age_group)],
+                            aes(x = incident_month, y = N, color = age_group)) +
+  geom_point() + 
+  geom_smooth() + 
+  ggtitle("AE episodes by age group per month")
+
+
+```
+
+# Comparison of the columns that we asked for and we have received for NHS Digital datasets
+
+Missing ECDS columns: `r paste0(length(missing_ecds_cols), collapse = " ")`
+Extra ECDS columns: `r paste0(extra_ecds_cols, collapse = " ")`
+
+Missing A&E columns: `r paste0(length(missing_ae_cols), collapse = " ")`  
+Extra A&E columns: `r paste0(extra_ae_cols, collapse = " ")`
+
+# Summary of the data received from NHS Digital
+
+```{r dataset numbers, echo = FALSE}
+kable_styling(kable(dataset_numbers, format = "html"))
+
+```
+
+Number of YAS records that do not have a patient ID assigned: `r paste0(yas[is.na(patient_id), .N], collapse = " ")`  
+Number of YAS records that have not been traced by NHS Digital (patient not found or patient ID not assigned): `r paste0(yas_records_not_traced[, .N], collapse = " ")`  
+Number of YAS patients that have not been traced by NHS Digital: `r paste0(yas_patients_not_traced, collapse = " ")`
+
+
+# Graphs of ECDS data plotted against arrival date
+```{r ecds graphs, echo = FALSE}
+
+ecds_records_per_month_plot
+
+ecds_records_per_week_plot
+
+ecds_age_plot
+
+ecds_age_month_plot
+
+```
+
+# Graphs of AE data plotted against arrival date
+``` {r ae graphs, echo = FALSE}
+
+ae_records_per_month_plot
+
+ae_records_per_week_plot
+
+ae_age_plot
+
+ae_age_month_plot
+
+```
+
+
