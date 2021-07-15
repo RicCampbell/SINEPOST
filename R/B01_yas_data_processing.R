@@ -63,10 +63,9 @@ source("R/cleaning_fns_etl.r")
            yas_data_mapping[field_group == "drugs" | source_field == "unique_epr_id", source_field],
            yas_data_mapping[field_group == "drugs" | source_field == "unique_epr_id", destination_field])
   
-  
+
   ## For testing - a save of this trimmed data has been saved
     # yas_data <- yas_data[1:100000]
-  
 
 
 # Clean data --------------------------------------------------------------
@@ -84,21 +83,6 @@ source("R/cleaning_fns_etl.r")
   all_cols_not_epr_id <- colnames(yas_data)[!(colnames(yas_data) %chin% "epr_id")]
   
   yas_data <- yas_data[rowSums(is.na(yas_data[, ..all_cols_not_epr_id])) != ncol(yas_data)]
-  
-
-## Reduce point-of-care fields so they are 1-to-1 with epr_id
-  
-  ## Splitting the look up into two groups 1) non_transport_reason, receiving_hospital, receiving_hospital_department, non_transport_reason = transported_to_hospital
-  ## 2) final_impression_code, hand_over_atmist, hand_over_sbar - non-null
-  
-  point_of_care_cols <- c("epr_id", yas_data_mapping[field_group == "point_of_care", destination_field])
-  
-  epr_point_of_care_temp <- unique(yas_data[, ..point_of_care_cols])
-  
-  multi_epr_point_of_care_temp <- epr_point_of_care_temp[, .N, by = epr_id][N > 1, epr_id]
-  
-  table <- epr_point_of_care_temp[epr_id %chin% multi_epr_point_of_care_temp][order(epr_id, transported_to_hospital)]
-  
   
 
 # Create ePR tables seperated into groups ---------------------------------
@@ -208,58 +192,152 @@ source("R/cleaning_fns_etl.r")
   
   epr_point_of_care_table[, receiving_hospital := gsub("'", "", toupper(receiving_hospital))]
   
+
+## Recode receiving hospital field
+  
+  receiving_hospital_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+                                                      sheet = "receiving_hospital",
+                                                      col_names = TRUE,
+                                                      col_types = "text",
+                                                      trim_ws = TRUE))
+  
+  yas_data[, receiving_hospital := receiving_hospital_mapping$receiving_hospital_mapped[match(receiving_hospital, receiving_hospital_mapping$receiving_hospital)]]
+  yas_data[!(receiving_hospital %chin% receiving_hospital_mapping$receiving_hospital_mapped), receiving_hospital_mapping := NA]
+  
   
 ## Change drug name to upper case
   
   epr_drug_fields_table[, drug_name := toupper(drug_name)]
   
   
-## Change dates to proper format (currently look right, but are not when do date maths)
-
-  epr_immobilisation_table[, iex_time := format(as.POSIXct(iex_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
-  epr_single_value_fields_table[, incident_datetime := format(as.POSIXct(incident_datetime, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
-  epr_cardiac_respiratory_arrest_table[, cardiac_arrest_time := format(as.POSIXct(cardiac_arrest_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
-  epr_cardiac_respiratory_arrest_table[, resuscitation_ceased_time := format(as.POSIXct(resuscitation_ceased_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
-  epr_phys_observations_table[, observations_recorded_time := format(as.POSIXct(observations_recorded_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+#  Reduce point-of-care fields so they are 1-to-1 with epr_id -------------
+  
+## *** Could pick receiving hospital better! but not the most important right now *****
+  
+## Splitting the look up into two groups 1) non_transport_reason, receiving_hospital, receiving_hospital_department = transported_to_hospital
+## 2) final_impression_code, hand_over_atmist, hand_over_sbar - non-null
+  
+  
+## Get all epr_ids that have appear twice across point of care table
+  
+  #multi_epr_point_of_care_ids <- unique(yas_data[, ..point_of_care_cols])[, .N, by = epr_id][N > 1, epr_id]
+  multi_epr_point_of_care_ids <- epr_point_of_care_table[, .N, by = epr_id][N > 1, epr_id]
+  
+  
+## Show that poc_colour and poc_type are empty so do not need to be included at moment
+  
+  stopifnot(getNamesOfEmptyFields(epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids]) == c("poc_colour", "poc_type"))
+  
+  
+## Create vectors of first grouping of fields, with epr_id
+  
+  poc_hospital_fields <- c("non_transport_reason", "receiving_hospital", "receiving_hospital_department", "transported_to_hospital", "epr_id")
+  
+  
+## Get single row of each epr where there is 2+ rows per epr_id, where transported to hospital is not null
+  
+  #multi_epr_poc_non_null_table <- unique(yas_data[epr_id %chin% multi_epr_point_of_care_ids, ..poc_hospital_fields])[!is.na(transported_to_hospital)]
+  multi_epr_poc_non_null_table <- unique(epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids, ..poc_hospital_fields][!is.na(transported_to_hospital)])
+  
+  
+## Show that each epr that had multiple rows for point of care, all have a non-null transported to hospital
+  
+  stopifnot(setdiff(multi_epr_point_of_care_ids, multi_epr_poc_non_null_table[, epr_id]) == 0)
+  
+## and only one unique non-null row
+  
+  stopifnot(multi_epr_poc_non_null_table[, .N, by = epr_id][N > 1, .N] == 0)
+  
+  
+## Replace fields with non-null transported to hospital record based on epr_id
+  
+  epr_point_of_care_table[multi_epr_poc_non_null_table, ':=' (non_transport_reason = i.non_transport_reason,
+                                                              receiving_hospital = i.receiving_hospital,
+                                                              receiving_hospital_department = i.receiving_hospital_department,
+                                                              transported_to_hospital = i.transported_to_hospital),
+                          on = "epr_id"]
+  
+  
+## Check that these fields now have a 1-to-1 relationship with epr_id
+  
+  stopifnot(unique(epr_point_of_care_table[, ..poc_hospital_fields])[, .N, by = epr_id][N > 1, .N] == 0)
+  
+  
+## Create vectors of second grouping of fields, with epr_id
+  
+  poc_handover_fields <- c("final_impression_code", "hand_over_atmist", "hand_over_sbar", "epr_id")
+  
+  multi_handover_table <- epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids, ..poc_handover_fields]
+  
+  
+  #### CHANGE TO 3 stopifnots not what is below! ******
+  
+  stopifnot(multi_handover_table[!is.na(final_impression_code), .N, by = .(epr_id, final_impression_code)][, .N, by = epr_id][N > 1, .N] == 0)
+  stopifnot(multi_handover_table[!is.na(hand_over_atmist), .N, by = .(epr_id, hand_over_atmist)][, .N, by = epr_id][N > 1, .N] == 0)
+  stopifnot(multi_handover_table[!is.na(hand_over_sbar), .N, by = .(epr_id, hand_over_sbar)][, .N, by = epr_id][N > 1, .N] == 0)
   
 
+## Set order so all NAs in all fields of interest are last (and therefore will be replaced)
+  
+  setorder(epr_point_of_care_table, epr_id, final_impression_code, hand_over_atmist, hand_over_sbar,  na.last = TRUE)
   
   
-  ## Merge in HES_ID to YAS data - currently will be dups as lookup is not 1-to-1
+## Replace all NA values with the last none NA value for that field, takes in to context the one final_impression_code that both rows had the same value
+## Could probably use and apply or create function, but unsure how to do this with so much going on in the 'by' section of data table.
   
-  yas_data_hes_id <- merge(epr_single_value_fields_table,
-                           encrypted_hes_to_study_id_lookup,
-                           by.x = "patient_id",
-                           by.y = "STUDY_ID",
-                           all.x = TRUE)
+  epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids, final_impression_code := final_impression_code[1], .(epr_id, cumsum(!is.na(final_impression_code)))]
+  epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids, hand_over_atmist := hand_over_atmist[1], .(epr_id, cumsum(!is.na(hand_over_atmist)))]
+  epr_point_of_care_table[epr_id %chin% multi_epr_point_of_care_ids, hand_over_sbar := hand_over_sbar[1], .(epr_id, cumsum(!is.na(hand_over_sbar)))]
   
-  ## record numbers
   
-  yas_data_hes_id[is.na(patient_id), .N]
-  yas_data_hes_id[is.na(ENCRYPTED_HESID), .N]
-  yas_data_hes_id[is.na(ENCRYPTED_HESID) & !is.na(patient_id), .N]/yas_data_hes_id[,.N]
-  yas_data_hes_id[is.na(ENCRYPTED_HESID) & !is.na(patient_id), .N]/yas_data_hes_id[!is.na(patient_id),.N]
-  yas_data_hes_id[is.na(ENCRYPTED_HESID) & !is.na(patient_id), .N, by = patient_id][, .N]
+## Check if have 1-to-1 relationship of these cols for each epr_id now, and for all point of care cols
+# Unique as there are still two lines for each epr that were the problem, but these have been made the same through processing above
   
-  ## want to report on people as well
+  stopifnot(unique(epr_point_of_care_table[, ..poc_handover_fields])[, .N, by = epr_id][N > 1, .N] == 0)
+  stopifnot(unique(epr_point_of_care_table)[, .N, by = epr_id][N > 1, .N] == 0)
   
-  ## 2 present in A&E data but not YAS data??
+## Unique whole table to get final 1-to-1 table
   
-  uniqueN(encrypted_hes_to_study_id_lookup[, ENCRYPTED_HESID]) - uniqueN(yas_data_hes_id[!is.na(ENCRYPTED_HESID), ENCRYPTED_HESID])
-  setdiff(encrypted_hes_to_study_id_lookup[, ENCRYPTED_HESID], yas_data_hes_id[!is.na(ENCRYPTED_HESID), ENCRYPTED_HESID])
+  poc_count <- epr_point_of_care_table[, .N]
   
-  ## Check that these two are somewhere - check original YAS read-in
+  epr_point_of_care_table <- unique(epr_point_of_care_table)
+  
+  stopifnot(poc_count - length(unique(multi_epr_point_of_care_ids)) == epr_point_of_care_table[, .N])
+  
+  
+  
+# Run with out as think it is fine and something may have gone wrong first time that has caused all this confusion!!!
+  
+## Change dates to proper format (currently look right, but are not when do date maths), back to string then to datetime
+## Using how date originally came gives error, "do not know how to convert 'time1' to class POSIXct when using difftime, even though is of class POSIXct
+# 
+#   epr_immobilisation_table[, iex_time := format(as.POSIXct(iex_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+#   epr_single_value_fields_table[, incident_datetime := format(as.POSIXct(incident_datetime, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+#   epr_cardiac_respiratory_arrest_table[, cardiac_arrest_time := format(as.POSIXct(cardiac_arrest_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+#   epr_cardiac_respiratory_arrest_table[, resuscitation_ceased_time := format(as.POSIXct(resuscitation_ceased_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+#   epr_phys_observations_table[, observations_recorded_time := format(as.POSIXct(observations_recorded_time, "YYYY-MM-DD HH:MM:SS", tz = "Europe/London"))]
+# 
+# 
+#   epr_immobilisation_table[, iex_time := lubridate::fast_strptime(iex_time, format = "%Y-%m-%d %H:%M:%S", tz = "Europe/London", lt = FALSE)]
+#   epr_single_value_fields_table[, incident_datetime := lubridate::fast_strptime(incident_datetime, format = "%Y-%m-%d %H:%M:%S", tz = "Europe/London", lt = FALSE)]
+#   epr_cardiac_respiratory_arrest_table[, cardiac_arrest_time := lubridate::fast_strptime(cardiac_arrest_time, format = "%Y-%m-%d %H:%M:%S", tz = "Europe/London", lt = FALSE)]
+#   epr_cardiac_respiratory_arrest_table[, resuscitation_ceased_time := lubridate::fast_strptime(resuscitation_ceased_time, format = "%Y-%m-%d %H:%M:%S", tz = "Europe/London", lt = FALSE)]
+#   epr_phys_observations_table[, observations_recorded_time := lubridate::fast_strptime(observations_recorded_time, format = "%Y-%m-%d %H:%M:%S", tz = "Europe/London", lt = FALSE)]
+# 
+
+
+  
 # Save data ---------------------------------------------------------------
 
 ## Save all tables, that have been unique'd and all rows containing only epr_id have been removed
   
-  save_time <- gsub(":", "", Sys.time(), fixed = TRUE)
+  save_time <- getDateTimeForFilename()
   
   save(list = c("epr_single_value_fields_table",
                 "epr_drug_fields_table",
                 epr_multi_value_ungrouped_field_tables,
                 epr_multi_value_grouped_field_tables),
-       file = paste0("data/datasets/epr_tables-", save_time, ".rda"))
+       file = paste0("data/datasets/epr_tables_datetime_changes-", save_time, ".rda"))
   
   
 ## Write over meta data spreadsheet as some col data types have been changed
