@@ -161,7 +161,7 @@ library(knitr)
                                    aes(x = incident_week, y = N)) +
                             geom_point() + 
                             geom_smooth() + 
-                            ggtitle("Ambulance records per month")
+                            ggtitle("Ambulance records per week")
   
   age_plot <- ggplot(yas_no_duplicates[, .N, by = age_group],
                      aes(x = age_group, y = N)) +
