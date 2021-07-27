@@ -11,7 +11,7 @@
 # Is this 1-3, 4 is walk-in centre, 99 is not known
 
 ## "..all follow up attendances, whether planned or unplanned were considered urgent."
-# ATTENDCAT values:
+# AEATTENDCAT values:
 # 1 - First A&E attendance
 # 2 - Follow-up A&E attendance, planned
 # 3 - Follow-up A&E attendance, unplanned
@@ -42,10 +42,15 @@
 # 12 - Left department before being treated
 
 
-calcLowAcuity <- function(dt, report = "outcome") {
+calcLowAcuity <- function(dt) {
   
-  dt_long <- melt(copy(dt), 
-                  id.vars = c("AEKEY", "AEATTENDDISP"),
+## Make copy of data and keep only records that '..attended a type 1 ED'
+  
+  dt_copy <- copy(dt)
+  dt_copy <- dt_copy[AEDEPTTYPE == "01"]
+  
+  dt_long <- melt(copy(dt_copy), 
+                  id.vars = c("AEKEY", "AEATTENDDISP", "AEATTENDCAT"),
                   measure.vars = patterns(treat = "TREAT2_", invest = "INVEST2_"),
                   variable.name = "position", 
                   na.rm = FALSE,
@@ -54,12 +59,9 @@ calcLowAcuity <- function(dt, report = "outcome") {
   la_outcomes <- dt_long[, .(low_acuity_invest = all(invest %chin% c("06", "21", "22", "24"), na.rm = TRUE),
                              valid_invests = sum(!is.na(invest)),
                              low_acuity_treat = all(treat %chin% c("07", "22", "30", "56", "57", "99"), na.rm = TRUE),
-                             valid_treats = sum(!is.na(treat))), by = .(AEKEY, AEATTENDDISP)]
+                             valid_treats = sum(!is.na(treat))), by = .(AEKEY, AEATTENDDISP, AEATTENDCAT)]
   
-  if(report == "completeness") {
-    return(la_outcomes[, .(AEKEY, valid_invests, valid_treats)])
-  }
-  
+
   la_outcomes[valid_invests == 0L, low_acuity_invest := NA]
   la_outcomes[valid_treats == 0L, low_acuity_treat := NA]
   
@@ -74,9 +76,11 @@ calcLowAcuity <- function(dt, report = "outcome") {
                 AEATTENDDISP == "12", 
               low_acuity_attendance := TRUE]
   
-  if(report == "outcome") {
-    return(la_outcomes[, .(AEKEY, low_acuity_attendance)])
-  }
+## Factor in that '..all follow up attendances were considered urgent
+  
+  la_outcomes[AEATTENDCAT == 2 | AEATTENDCAT == 3, low_acuity_attendance := FALSE]
+  
+  la_outcomes[AEATTENDCAT == 9 & low_acuity_attendance == TRUE, low_acuity_attendance := NA]
   
   return(la_outcomes[, .(AEKEY, valid_invests, valid_treats, low_acuity_invest, low_acuity_treat, low_acuity_attendance)])
 }
