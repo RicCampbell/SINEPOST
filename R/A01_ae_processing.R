@@ -174,14 +174,14 @@ ae_data[AEKEY %chin% ae_duplicated_hesid_arrivaltime_aekeys, duplicates := dupli
 ae_data[, duplicates := NULL]
 
 ## Instead we pick the "most complete" record based on variables required to calculate "low acuity attendances"
-la_fields_completeness <- calcLowAcuity(ae_data, "all")
+la_fields_completeness <- calcLowAcuity(ae_data)
 
 ae_data <- merge(ae_data,
                  la_fields_completeness,
                  by = "AEKEY",
                  all.x = TRUE)
 
-ae_data[, ':=' (la_fields_present = (!is.na(AEATTENDDISP) & valid_invests > 0 & valid_treats > 0),
+ae_data[, ':=' (la_fields_present = (!is.na(AEATTENDDISP) & !is.na(AEATTENDCAT) & valid_invests > 0 & valid_treats > 0),
                 la_completeness = as.numeric(!is.na(AEATTENDDISP)) + valid_invests + valid_treats)]
 
 setorder(ae_data, -la_fields_present, -la_completeness, AEKEY) # Use AEKEY as "tie-breaker"
