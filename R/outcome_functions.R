@@ -8,7 +8,7 @@
 
 ## "..who attended a type 1 ED"
 # AEDEPTTYPE values:
-# Is this 1-3, 4 is walk-in centre, 99 is not known
+# 01 - Emergency department
 
 ## "..all follow up attendances, whether planned or unplanned were considered urgent."
 # AEATTENDCAT values:
@@ -46,19 +46,19 @@ calcLowAcuity <- function(dt) {
   
 ## Make copy of data and keep only records that '..attended a type 1 ED'
   
-  dt_copy <- copy(dt)
-  dt_copy <- dt_copy[AEDEPTTYPE == "01"]
+  # dt <- copy(ae_data)
   
-  dt_long <- melt(copy(dt_copy), 
+  
+  dt_long <- melt(copy(dt[AEDEPTTYPE == "01"]), 
                   id.vars = c("AEKEY", "AEATTENDDISP", "AEATTENDCAT"),
                   measure.vars = patterns(treat = "TREAT2_", invest = "INVEST2_"),
                   variable.name = "position", 
                   na.rm = FALSE,
                   variable.factor = FALSE)
   
-  la_outcomes <- dt_long[, .(low_acuity_invest = all(invest %chin% c("06", "21", "22", "24"), na.rm = TRUE),
+  la_outcomes <- dt_long[, .(low_acuity_invest = all(invest %chin% c("06", "21", "22", "24", NA)),
                              valid_invests = sum(!is.na(invest)),
-                             low_acuity_treat = all(treat %chin% c("07", "22", "30", "56", "57", "99"), na.rm = TRUE),
+                             low_acuity_treat = all(treat %chin% c("07", "22", "30", "56", "57", "99", NA)),
                              valid_treats = sum(!is.na(treat))), by = .(AEKEY, AEATTENDDISP, AEATTENDCAT)]
   
 
