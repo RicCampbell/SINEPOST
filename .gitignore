@@ -3,6 +3,8 @@
 .RData
 .Ruserdata
 data/*
+data-raw/*
+R/00_ad_hoc_scripts/*
 *.pdf
 *.csv
 *.xlsx
