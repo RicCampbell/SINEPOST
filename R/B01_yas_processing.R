@@ -9,7 +9,7 @@ source("R/cleaning_fns_etl.r")
 ## Read in YAS tables
 
   epr_data_object_names <- load("data/datasets/epr_tables_2021-07-19-184552.rda")
-
+  
 
 # Remove eprs so that we have only a single epr per (incident_datetime-HESid) pair --------
   
@@ -212,9 +212,10 @@ source("R/cleaning_fns_etl.r")
   epr_point_of_care_table[!(receiving_hospital %chin% receiving_hospital_mapping$receiving_hospital_mapped), receiving_hospital := NA]
   
   
-## Create new field for second coding of receiving hospital (can/can't use)
+## Create new field for second coding of receiving hospital (can/can't use), and add in postcode of hospital
 
   epr_point_of_care_table[, receiving_hospital_sinepost := receiving_hospital_mapping$receiving_hospital_sinepost[match(receiving_hospital, receiving_hospital_mapping$receiving_hospital)]]
+  epr_point_of_care_table[, receiving_hospital_postcode := receiving_hospital_mapping$postcode[match(receiving_hospital, receiving_hospital_mapping$receiving_hospital)]]
     
 
 ## Re-code receiving hospital department field
@@ -240,6 +241,41 @@ source("R/cleaning_fns_etl.r")
   epr_point_of_care_table[!(final_impression_code %in% final_impression_code_mapping$final_impression_code_mapped), final_impression_code := NA]
   
 
+
+# Add in deprivation index outcome --------------------------------------------------------
+
+## Read in postcode-IMD lookup
+  
+  load("D:/reference_data/pc_to_oa11_classes.rda")
+  
+## Tidy YAS postcode, all uppercase and standard format (might as well do GP one as well)
+  
+  epr_single_value_fields_table[,  ':=' (postcode = fn_cleanPostcode(postcode),
+                                         gp_postcode = fn_cleanPostcode(gp_postcode ))]
+  epr_single_value_fields_table[,  ':=' (postcode = fn_removeBlanks(postcode),
+                                         gp_postcode = fn_removeBlanks(gp_postcode))]
+  
+## There are 10 postcodes with more than 8 characters, set this to NA
+  
+  epr_single_value_fields_table[nchar(postcode) > 8, postcode := NA]
+  
+## Ensure YAS postcodes always have one (and only one) space between outward and inward portions, and of variable length (like downloaded ref data)
+  
+  stopifnot(epr_single_value_fields_table[, max(nchar(postcode), na.rm = TRUE)] == 8 & epr_single_value_fields_table[, min(nchar(postcode), na.rm = TRUE)] == 6 &
+              epr_single_value_fields_table[substr(postcode, nchar(postcode) - 3, nchar(postcode) - 3) == " ", .N] == epr_single_value_fields_table[!is.na(postcode), .N])
+  
+  
+## Merge in IMD to epr data
+  
+  epr_single_value_fields_table <- merge(epr_single_value_fields_table,
+                                         pc_to_oa11_classes,
+                                         by.x = "postcode",
+                                         by.y = "pcds",
+                                         all.x = TRUE)
+  
+  epr_single_value_fields_table[, postcode_invalid := !is.na(postcode) & is.na(usertype)]
+  epr_single_value_fields_table[postcode_invalid == FALSE & is.na(usertype), postcode_invalid := NA]
+  
   
 # Re-attendances in YAS data ----------------------------------------------
   
