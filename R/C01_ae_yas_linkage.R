@@ -7,13 +7,13 @@ source("R/cleaning_fns_etl.r")
 
 ## Read in data
 
-  ae_data <- readRDS("data/datasets/ae_processed_2021-07-20-093110.rds")
-  yas_data <- load("data/datasets/cohort_processed_epr_table_2021-07-20-170623.rda")
+  ae_data <- readRDS("data/datasets/ae_processed_2021-08-02-152502.rds")
+  yas_data <- load("data/datasets/cohort_processed_epr_table_2021-08-03-094902.rda")
   
   
 ## Read in look up table created in A01
   
-  study_id_encrypted_hesid_lookup <- readRDS("data/linkage/study_id_hesid_lookup_2021-07-12-105942.rds")
+  study_id_encrypted_hesid_lookup <- readRDS("data/linkage/study_id_hesid_lookup_2021-08-02-152440.rds")
   
 
 ## Check only one ENCRYPTED_HESID per AEKEY
@@ -128,10 +128,10 @@ source("R/cleaning_fns_etl.r")
 
 
 # Non-conveyed AE attendances ----------------------------------------------
-## Look at if was any AE attendance within 24 hours of ambulance time for those not said were conveyed
+## Look at if there was any AE attendance within 24 hours of ambulance time for those not said were conveyed
   
   
-## Merge all epr and all ae records together (includes non-transported to hospital, not ED destination)
+## Merge all epr and all AE records together (includes non-transported to hospital, not ED destination)
   
   all_yas_ae_linked <- merge(epr_single_value_fields_table[!is.na(epr_ENCRYPTED_HESID), .(epr_ENCRYPTED_HESID, epr_incident_datetime, epr_id)],
                              ae_data[, .(ae_ENCRYPTED_HESID, ae_ARRIVALTIME, AEKEY, ae_low_acuity_attendance)],
@@ -164,10 +164,10 @@ source("R/cleaning_fns_etl.r")
   
 ## Merge back into yas_ae table
   
-  test <- merge(yas_ae_data,
-                attendance_24_hours[, .(epr_id, number_ae_24_hour_attendances, all_low_acutity_24_hours)],
-                by = "epr_id",
-                all.x = TRUE)  
+  yas_ae_data <- merge(yas_ae_data,
+                       attendance_24_hours[, .(epr_id, number_ae_24_hour_attendances, all_low_acutity_24_hours)],
+                       by = "epr_id",
+                       all.x = TRUE)  
   
 # Save linked YAS-AE data -------------------------------------------------
 
