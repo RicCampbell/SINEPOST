@@ -1,7 +1,8 @@
-## Script for preparing ECDS data to be linked to YAS data, and to standardise cols that require it
+## Script for preparing ECDS data to be linked to AE/YAS data, and to standardise cols that require it
 
 library(data.table)
 source("R/cleaning_fns_etl.r")
+source("R/standardise_functions.r")
 
 
 # Read in HES data --------------------------------------------------------
@@ -29,13 +30,8 @@ source("R/cleaning_fns_etl.r")
 # ecds[, .N] # 254181
 # sapply(ecds, function(col) sum(is.na(col)))
 
-  
-## Probably don't want a SSoT as coming from same-ish source, and don't have enough demographic information to creat and be certain of
-## All records have STUDY_ID
 
-## Could remove more fields that appear in both datasets or aren't required  
-
-# Retain unique records only, and create record ID
+# Retain unique records only
 
   ecds_data <- unique(ecds)
 
@@ -94,17 +90,105 @@ source("R/cleaning_fns_etl.r")
                     AGE_AT_CDS_ACTIVITY_DATE = as.integer(AGE_AT_CDS_ACTIVITY_DATE ),
                     AGE_RANGE = as.integer(AGE_RANGE))]
   
-
   
-  ## Merge in HES_ID to ECDS data
+## Merge in readable acuity labels from SNOMED codes and change col name
+  
+  ecds_acuity_snomed <- fread("D:/reference_data/ecds_acuity_snomed.csv",
+                              colClasses = "character")
+  
+  ecds_data <- merge(ecds_data,
+                     ecds_acuity_snomed[, .(referencedcomponentid, preferredterm)],
+                     by.x = "ACUITY",
+                     by.y = "referencedcomponentid",
+                     all.x = TRUE)
+  
+  setnames(ecds_data, "preferredterm", "acuity_label")
+  
+  
+## Create field for readable SITE label - read in trust data first
+  
+  trust_data <- readRDS("D:/reference_data/site_data.rds")
+  
+  ecds_data[, site_label := trust_data$name[match(SITE, trust_data$org_code)]]
+  ecds_data[!(SITE %chin% trust_data$org_code), site_label := NA]
+  
+  
+## Create field for readable Arrival mode  
+  
+  ecds_arrival_mode <- fread("D:/reference_data/ecds_arrival_mode.csv",
+                             colClasses = "character")
+  
+  ecds_data <- merge(ecds_data,
+                     ecds_arrival_mode[, .(referencedcomponentid, preferredterm)],
+                     by.x = "ARRIVAL_MODE",
+                     by.y = "referencedcomponentid",
+                     aall.x = TRUE)
+  
+  setnames(ecds_data, "preferredterm", "arrival_mode_label")
+  
+  
+## Create field for readable Attendance source
+  
+  ecds_arrival_source <- fread("D:/reference_data/ecds_arrival_source.csv",
+                                  colClasses = "character")
+  
+  ecds_data <- merge(ecds_data,
+                     ecds_arrival_source[, .(referencedcomponentid, preferredterm)],
+                     by.x = "ATTENDANCE_SOURCE",
+                     by.y = "referencedcomponentid",
+                     all.x = TRUE)
+  
+  setnames(ecds_data, "preferredterm", "attendance_source_label")
+  
+
+## Create field for readable attendance category
+  
+  attendance_cat_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+                                                  sheet = "ecds_attendance_cat",
+                                                  col_names = TRUE,
+                                                  col_types = "text",
+                                                  trim_ws = TRUE))
+  
+  ecds_data <- merge(ecds_data,
+                     attendance_cat_mapping,
+                     by.x = "ATTENDANCE_CATEGORY",
+                     by.y = "attendance_cat",
+                     all.x = TRUE)
+  
+  
+## Create field for readable department type
+  
+  attendance_cat_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+                                                  sheet = "ecds_dep_type",
+                                                  col_names = TRUE,
+                                                  col_types = "text",
+                                                  trim_ws = TRUE))
+  
+  ecds_data <- merge(ecds_data,
+                     attendance_cat_mapping,
+                     by.x = "DEPARTMENT_TYPE",
+                     by.y = "department_type",
+                     all.x = TRUE)
+  
+  
+## Remove all fields that have been made readable
+  
+  ecds_data[, c("ARRIVAL_MODE", "ATTENDANCE_SOURCE", "ATTENDANCE_CATEGORY", "DEPARTMENT_TYPE") := NULL]
+  
+## Read in study_id-HES_is look up table created in A01
+  
+  study_id_encrypted_hesid_lookup <- readRDS("data/linkage/study_id_hesid_lookup_2021-08-02-152440.rds")  
+  
+  
+## Merge in HES_ID to ECDS data
   
   ecds_data_hes_id <- merge(ecds_data,
-                            encrypted_hes_to_study_id_lookup,
+                            study_id_encrypted_hesid_lookup,
                             by = "STUDY_ID",
                             all.x = TRUE)
   
   
-  ## How many ECDS records do not have a HES_ID linked to them, and how many study ids does this apply to (report %'s)
+## How many ECDS records do not have a HES_ID linked to them, and how many study ids does this apply to (report %'s)
   
   ecds_data_hes_id[is.na(ENCRYPTED_HESID), .N]
   ecds_data_hes_id[is.na(ENCRYPTED_HESID), .N, by = STUDY_ID][, .N]
@@ -118,5 +202,5 @@ source("R/cleaning_fns_etl.r")
   
   save_time <- gsub(":", "", Sys.time(), fixed = TRUE)
 
-  saveRDS(ecds_data, file = paste0("data/datasets/ecds_processed_", save_time, ".rds"))
+  saveRDS(ecds_data_hes_id, file = paste0("data/datasets/ecds_processed_", save_time, ".rds"))
   
