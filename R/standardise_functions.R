@@ -50,6 +50,50 @@ datesWithinRange <- function(table, date_cols, min_date, max_date) {
 
 
 
+## Function for checking postcodes of sites that are being used (actually works on ods code but don't have that so working backwards as not many hospitals)
+
+getODSDetails <- function(ods_code) {
+  
+  print(ods_code)
+  
+  url <- paste0("https://directory.spineservices.nhs.uk/STU3/Organization/", ods_code)
+  
+  doc <- httr::GET(url)
+  
+  if(httr::status_code(doc) != 200) {
+    return(data.frame(ods_code,
+                      name = NA,
+                      org_type = NA,
+                      status_active = NA,
+                      postcode = NA,
+                      stringsAsFactors = FALSE))
+  }
+  
+  payload <- httr::content(doc)
+  
+  
+  primary_role <- sapply(payload$extension, function(object) {
+    if(object$url == "https://fhir.nhs.uk/STU3/StructureDefinition/Extension-ODSAPI-OrganizationRole-1") {
+      if(object$extension[[2]]$url == "primaryRole" & object$extension[[2]]$valueBoolean) {
+        TRUE
+      } else {
+        FALSE
+      }
+    } else {
+      FALSE
+    }
+  })
+  
+  payload$extension[[which(primary_role)]]$extension[[1]]$valueCoding$display
+  
+  data.frame(ods_code,
+             name = payload$name,
+             org_type = payload$extension[[which(primary_role)]]$extension[[1]]$valueCoding$display,
+             status_active = payload$active,
+             postcode = payload$address$postalCode,
+             stringsAsFactors = FALSE)
+}
+
 
 
 
