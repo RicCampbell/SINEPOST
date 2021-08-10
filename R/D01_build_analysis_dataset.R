@@ -3,35 +3,105 @@
 ## Creates and adds derived outcome fields
 
 library(data.table)
+library(sf)
+library(hereR)
 source("R/cleaning_fns_etl.r")
 
+## For using hereR package, an API key has to be set each session
+## Key created for freemium 'here' project 2021-07-29
 
-## Load in standardised YAS tables, and AE linked YAS data, and ref data
+  set_key("lPG7Ynu7KmHJW2OzpX7Kh0zIT2EOA4W6tdHqG_pfS1I")
 
-  epr_data_object_names <- load("data/datasets/cohort_processed_epr_table_2021-07-20-170623.rda")
-  yas_ae_data <- readRDS("data/datasets/yas_ae_linked_2021-07-23-134459.rds")
+  
+## Load in standardised YAS tables, and AE linked YAS data
+  
+### NEED TO CHANGE TO READ IN YAS_AE_ECDS DATA - check this all the way through and that don't lose any fields at any point
 
-
-# Create deprivation index outcome ----------------------------------------
-
-## ** add in later **
-
-
+  epr_data_object_names <- load("data/datasets/cohort_processed_epr_table_2021-08-03-094902.rda")
+  yas_ae_ecds_data <- readRDS("data/datasets/yas_ae_ecds_linked_2021-08-05-144835.rds")
 
 
 # Create distance to hospital outcome -------------------------------------
 
-## ** add in later **
-
-
-
-
+#   ## Read in IMD file as has long-lat points for all postcodes
+#   
+#   load("D:/reference_data/pc_to_oa11_classes.rda")
+#   
+#   
+# ## Create table of incident postcodes and receiving hospital postcodes
+#   
+#   incident_hospital_geo_data <- unique(yas_ae_data[!is.na(epr_postcode) & !is.na(AEKEY), .(epr_postcode, epr_receiving_hospital_postcode)][1:2])
+# 
+# 
+# ## Check that both sets of postcodes are in the correct format (one and only one space between in/outward portions)
+#   
+#   stopifnot(incident_hospital_geo_data[, max(nchar(epr_postcode), na.rm = TRUE)] <= 8 & incident_hospital_geo_data[, min(nchar(epr_postcode), na.rm = TRUE)] >= 6 &
+#               incident_hospital_geo_data[substr(epr_postcode, nchar(epr_postcode) - 3, nchar(epr_postcode) - 3) == " ", .N] == incident_hospital_geo_data[!is.na(epr_postcode), .N])
+#   
+#   stopifnot(incident_hospital_geo_data[, max(nchar(epr_receiving_hospital_postcode), na.rm = TRUE)] <= 8 & incident_hospital_geo_data[, min(nchar(epr_receiving_hospital_postcode), na.rm = TRUE)] >= 6 &
+#               incident_hospital_geo_data[substr(epr_receiving_hospital_postcode, nchar(epr_receiving_hospital_postcode) - 3, nchar(epr_receiving_hospital_postcode) - 3) == " ", .N] == incident_hospital_geo_data[!is.na(epr_receiving_hospital_postcode), .N])
+#   
+#   
+# ## Merge in long/lat data from ONS postcode file for incident and then receiving hospital postcodes
+#   
+#   incident_hospital_geo_data <- merge(incident_hospital_geo_data,
+#                                    pc_to_oa11_classes[, .(pcds, lat, long)],
+#                                    by.x = "epr_postcode",
+#                                    by.y = "pcds",
+#                                    all.x = TRUE)
+#   
+#   setnames(incident_hospital_geo_data, c("lat", "long"), c("epr_lat", "epr_long"))
+#   
+#   
+#   incident_hospital_geo_data <- merge(incident_hospital_geo_data,
+#                                       pc_to_oa11_classes[, .(pcds, lat, long)],
+#                                       by.x = "epr_receiving_hospital_postcode",
+#                                       by.y = "pcds",
+#                                       all.x = TRUE)
+#   
+#   setnames(incident_hospital_geo_data, c("long", "lat"), c("receiving_hospital_long", "receiving_hospital_lat"))
+#   
+# 
+# ## Create sf object from each lat-long co-ords
+#   
+#   test <- copy(incident_hospital_geo_data)#[, c("receiving_hospital_long", "receiving_hospital_lat") := NULL]
+#   
+#   test <- as.data.frame(test)
+#   
+#   test <- st_as_sf(test, coords = c("epr_long", "epr_lat"), remove = FALSE)
+#   
+#   setnames(test, "geometry", "epr_point")
+#   st_geometry(test) <- "epr_point"
+#   
+#   
+#   test <- st_as_sf(as.data.frame(test), coords = c("receiving_hospital_long", "receiving_hospital_lat"), remove = FALSE)
+#   setnames(test, "geometry", "receving_hospital_point")
+#   st_geometry(test) <- "receving_hospital_point"
+#   
+#   routes <- route(test, "receving_hospital_point", "epr_point", transport_mode = "car") 
+#   
+#   
+#   incident_hospital_geo_data[, ':=' (epr_sf_point = st_as_sf(incident_hospital_geo_data, coords = c("epr_lat", "epr_long")),
+#                                      receiving_hospital_sf_point = st_as_sf(incident_hospital_geo_data, coords = c("receiving_hospital_lat", "receiving_hospital_long")))]
+# 
+# ## Find distance between both points
+#   
+#   incident_trust_geo_data[, distance := route(geocode(epr_postcode),
+#                                               geocode(trust_postcode),
+#                                               transport_mode = "car")$distance]
+#   
+#   
+#   
+# ## Could add in distance between points WITH traffic included from time of incident/arrival on scene
+# ## Would give time between 'assumed' arrival at destination and AE record time?
+# 
+# 
 
 # Add in desired fields from other YAS tables, and add prefix for each table --------
 
 ## Take number or records/epr_ids to check merges later
   
-  epr_id_count <- yas_ae_data[, .N]
+  epr_id_count <- yas_ae_ecds_data[, .N]
   
   
 ## Find max news scores for each epr_id
@@ -42,7 +112,6 @@ source("R/cleaning_fns_etl.r")
            paste("epr", setdiff(colnames(max_news_score_data), "epr_id"), sep = "_"))
            
   stopifnot(uniqueN(epr_news_score_table[, epr_id]) == max_news_score_data[, .N])
-  
   
 
 # Physical observations ---------------------------------------------------
@@ -164,31 +233,40 @@ source("R/cleaning_fns_etl.r")
 
 ## Then will want to merge all tables on epr_id
     
-    epr_id_merge_tables <- list(yas_ae_data,
+    epr_id_merge_tables <- list(yas_ae_ecds_data,
                                 max_news_score_data,
                                 physcial_obvs_wide)
 
 
-    merged_epr_ids_table <- Reduce(function(x, y) merge(x = x, y = y, by = "epr_id", all.x = TRUE), epr_id_merge_tables)
+    analysis_dataset <- Reduce(function(x, y) merge(x = x, y = y, by = "epr_id", all.x = TRUE), epr_id_merge_tables)
     
   
 ## Remove some fields 
     
-    merged_epr_ids_table[, ("epr_postcode") := NULL]
+    analysis_dataset[, c("epr_postcode", "epr_lat", "epr_long", "epr_lsoa11", "epr_ru11ind", "epr_oac11", "ecds_BIRTH_YEAR",
+                         "ecds_CONCLUSION_TIME", "ecds_ASSESSMENT_TIME", "ecds_DEPARTURE_TIME", "ecds_SEEN_TIME") := NULL]
     
     
 ## Turn datetime into dates only
     
-    merged_epr_ids_table[, epr_incident_datetime := as.Date(epr_incident_datetime)]
-    merged_epr_ids_table[, observations_recorded_time_primary := as.Date(observations_recorded_time_primary)]
-    merged_epr_ids_table[, observations_recorded_time_subsequent := as.Date(observations_recorded_time_subsequent)]
+    analysis_dataset[, epr_incident_datetime := as.Date(epr_incident_datetime)]
+    analysis_dataset[, observations_recorded_time_primary := as.Date(observations_recorded_time_primary)]
+    analysis_dataset[, observations_recorded_time_subsequent := as.Date(observations_recorded_time_subsequent)]
+    
+    analysis_dataset[, ARRIVAL_TIME := as.Date(ARRIVAL_TIME)]
+    
+    analysis_dataset[, ecds_INJURY_TIME := as.Date(ecds_INJURY_TIME)]
+    analysis_dataset[, ecds_INVESTIGATION_TIME_1 := substr(ecds_INVESTIGATION_TIME_1, 12, 19)]
+    analysis_dataset[, ecds_TREATMENT_TIME_1 := substr(ecds_TREATMENT_TIME_1, 12, 19)]
     
     
 # Save data ---------------------------------------------------------------
-
+## Save as both csv and as an rsa object as Jamie is in R as well
+    
   save_time <- getDateTimeForFilename()
     
-  write.csv(merged_epr_ids_table, file = paste0("data/data_for_analysis/cohort_", save_time, "_yas_ae_phys_obvs.csv"))
+  write.csv(analysis_dataset, file = paste0("data/data_for_analysis/cohort_", save_time, "_yas_ae_ecds_phys_obvs.csv"))
+  saveRDS(analysis_dataset, file = paste0("data/data_for_analysis/cohort_", save_time, "_yas_ae_ecds_phys_obvs.rds"))
   
   
   
