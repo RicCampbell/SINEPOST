@@ -115,13 +115,13 @@ source("R/cleaning_fns_etl.r")
   routes <- data.table(routes)
     
   incident_hospital_routes <- merge(incident_hospital_geo_data[, .(epr_receiving_hospital_postcode, epr_postcode, row_id)],
-                                    routes[, .(id, distance, duration)],
+                                    routes[, .(id, distance, duration_base)],
                                     by.x = "row_id",
                                     by.y = "id",
                                     all.x = TRUE)[, row_id := NULL]
   
   
-  saveRDS(incident_hospital_routes, file - paste("data/datasets/incident_hospital_routes", save_time, ".rds", sep = "_"))
+  saveRDS(incident_hospital_routes, file = paste("data/datasets/incident_hospital_routes", save_time, ".rds", sep = "_"))
   
   
 ## Could add in distance between points WITH traffic included from time of incident/arrival on scene
