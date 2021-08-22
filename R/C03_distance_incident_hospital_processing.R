@@ -63,11 +63,15 @@ source("R/cleaning_fns_etl.r")
 
   incident_hospital_geo_data[, row_id := 1:.N]
   
+## Remove any rows now that have either no epr coords or receiving hospital coords as route function can not handle this
+  
+  incident_hospital_geo_data <- incident_hospital_geo_data[!(is.na(epr_lat) | is.na(receiving_hospital_lat))]
+  
   origin <- incident_hospital_geo_data[, .(epr_postcode,epr_lat, epr_long, row_id)]
   destination <- incident_hospital_geo_data[, .(epr_receiving_hospital_postcode, receiving_hospital_lat, receiving_hospital_long, row_id)]
 
 
-## Create sf object from each lat-long co-ords
+## Create sf object from each lat-long co-ords, keep coords after conversion
   
   origin <- st_as_sf(origin, coords = c("epr_long", "epr_lat"), remove = FALSE)
 
