@@ -63,8 +63,6 @@ source("R/cleaning_fns_etl.r")
 
   incident_hospital_geo_data[, row_id := 1:.N]
   
-  incident_hospital_geo_data <- incident_hospital_geo_data[1:10]
-  
   origin <- incident_hospital_geo_data[, .(epr_postcode,epr_lat, epr_long, row_id)]
   destination <- incident_hospital_geo_data[, .(epr_receiving_hospital_postcode, receiving_hospital_lat, receiving_hospital_long, row_id)]
 
