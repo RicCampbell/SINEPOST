@@ -25,7 +25,7 @@ source("R/cleaning_fns_etl.r")
 ## Create table of incident postcodes and receiving hospital postcodes
 ## Can unique as long as re-merge into yas_ae_ecds data via both postcodes
 
-  incident_hospital_geo_data <- unique(yas_ae_ecds_data[!is.na(epr_postcode) & !is.na(AEKEY), .(epr_postcode, epr_receiving_hospital_postcode)][1:20])
+  incident_hospital_geo_data <- unique(yas_ae_ecds_data[!is.na(epr_postcode) & !is.na(AEKEY), .(epr_postcode, epr_receiving_hospital_postcode)])
 
 
 ## Check that both sets of postcodes are in the correct format (one and only one space between in/outward portions)
@@ -121,7 +121,7 @@ source("R/cleaning_fns_etl.r")
                                     all.x = TRUE)[, row_id := NULL]
   
   
-  saveRDS(incident_hospital_routes, file = paste("data/datasets/incident_hospital_routes", save_time, ".rds", sep = "_"))
+  saveRDS(incident_hospital_routes, file = "data/datasets/incident_hospital_routes_", save_time, ".rds")
   
   
 ## Could add in distance between points WITH traffic included from time of incident/arrival on scene
