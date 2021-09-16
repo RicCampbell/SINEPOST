@@ -1,5 +1,3 @@
-
-
 library(data.table)
 library(lubridate)
 library(readxl)
@@ -8,7 +6,7 @@ source("R/cleaning_fns_etl.r")
 
 ## Read in YAS tables
 
-  epr_data_object_names <- load("data/datasets/epr_tables_2021-07-19-184552.rda")
+  epr_data_object_names <- load("data/datasets/epr_tables_2021-09-13-145424.rda")
   
 
 # Remove eprs so that we have only a single epr per (incident_datetime-HESid) pair --------
@@ -16,14 +14,14 @@ source("R/cleaning_fns_etl.r")
 
 ## Read in patient_id-HES id look up, and merge into epr_single table
 
-  study_id_encrypted_hesid_lookup <- readRDS("data/linkage/study_id_hesid_lookup_2021-07-12-105942.rds")
+  study_id_encrypted_hesid_lookup <- readRDS("data/linkage/study_id_hesid_lookup_2021-08-02-152440.rds")
   
   epr_single_value_fields_table <- merge(epr_single_value_fields_table,
-                                                study_id_encrypted_hesid_lookup,
-                                                by.x = "patient_id",
-                                                by.y = "STUDY_ID",
-                                                all.x = TRUE)
-
+                                         study_id_encrypted_hesid_lookup,
+                                         by.x = "patient_id",
+                                         by.y = "STUDY_ID",
+                                         all.x = TRUE)
+  
 
 ## Find HES ids that appear with the same incident datetime more than once
 
@@ -177,30 +175,37 @@ source("R/cleaning_fns_etl.r")
 
   ## Read in re-coding files
   
-  receiving_hospital_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  receiving_hospital_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                                       sheet = "receiving_hospital",
                                                       col_names = TRUE,
                                                       col_types = "text",
                                                       trim_ws = TRUE))
   
-  ethnicity_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  ethnicity_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                                       sheet = "ethnicity_mapping",
                                                       col_names = TRUE,
                                                       col_types = "text",
                                                       trim_ws = TRUE))
   
-  receiving_hospital_department_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  receiving_hospital_department_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                                                  sheet = "receiving_hospital_department",
                                                                  col_names = TRUE,
                                                                  col_types = "text",
                                                                  trim_ws = TRUE))
   
-  final_impression_code_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  final_impression_code_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                                          sheet = "final_impression_code",
                                                          col_names = TRUE,
                                                          col_types = c("numeric","text"),
                                                          trim_ws = TRUE))
   
+  drug_mapping <- data.table(read_excel("D:/reference_data/catagorical_variables_values_download_2021-07-16.xlsx",
+                                        sheet = "epr_drug_fields_table",
+                                        col_names = TRUE,
+                                        col_types = "text",
+                                        trim_ws = TRUE))
+  
+
 ## Check final impression code has a mapping for 1-99
   
   stopifnot(setdiff(1:99, final_impression_code_mapping$final_impression_code) == 0)
@@ -241,7 +246,14 @@ source("R/cleaning_fns_etl.r")
   epr_point_of_care_table[!(final_impression_code %in% final_impression_code_mapping$final_impression_code_mapped), final_impression_code := NA]
   
 
-
+## Re-code drugs field
+  
+  epr_drug_fields_table[, drug_mapped := drug_mapping$end_value[match(drug_name, drug_mapping$field_value)]]
+  
+  epr_drug_fields_table[!(drug_mapped %in% drug_mapping$end_value), drug_mapped := NA]
+  epr_drug_fields_table[, drug_name := NULL]
+  
+  
 # Add in deprivation index outcome --------------------------------------------------------
 
 ## Read in postcode-IMD lookup
