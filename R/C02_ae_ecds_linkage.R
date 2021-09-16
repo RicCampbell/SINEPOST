@@ -7,7 +7,7 @@ source("R/cleaning_fns_etl.r")
 ## Read in the processed ECDS and AE data (could change to AE-yas data)
 
   ecds_data <- readRDS("data/datasets/ecds_processed_2021-08-05 144452.rds")
-  yas_ae_data <- readRDS("data/datasets/yas_ae_linked_2021-08-03-095334.rds")
+  yas_ae_data <- readRDS("data/datasets/yas_ae_linked_2021-09-14-162155.rds")
   
   
 ## Take original counts for checks later
@@ -21,7 +21,7 @@ source("R/cleaning_fns_etl.r")
   stopifnot(ecds_data[, .N, by = .(ENCRYPTED_HESID, RECORD_IDENTIFIER)][, .N, by = RECORD_IDENTIFIER][N > 1, .N] == 0)
   
   
-## Multiple lines per record-id
+## Need to remove multiple records per record-id
   
   multiple_record_id_count <- ecds_data[, .N, by = RECORD_IDENTIFIER][N > 1, .N]
   
@@ -39,7 +39,15 @@ source("R/cleaning_fns_etl.r")
 ## Remove all records without HES id as they won't be linked to anything anyway
   
   ecds_data <- ecds_data[!is.na(ENCRYPTED_HESID)]
+ 
+
+# Reduce to one-to-one hes-id - arrival time pairs ----------------------------------
   
+## Make datetime comparable to HES A&E datetime field (minute level accuracy, currently is second)
+## Doing so later re-adds in problem of multiple hes-id - arrival time pairs
+  
+  ecds_data[, ae_ARRIVALTIME := lubridate::floor_date(ARRIVAL_TIME, "minute")]
+
   
 ## Create field of number of blank fields
   
@@ -53,13 +61,13 @@ source("R/cleaning_fns_etl.r")
   
 ## Set order so that we get records with acuity first, and then least number of blank records
   
-  setorder(ecds_data, ENCRYPTED_HESID, ARRIVAL_TIME, null_acuity, null_fields, DIAGNOSIS_CODE_1, INVESTIGATION_CODE_1, TREATMENT_CODE_1,
+  setorder(ecds_data, ENCRYPTED_HESID, ae_ARRIVALTIME, null_acuity, null_fields, DIAGNOSIS_CODE_1, INVESTIGATION_CODE_1, TREATMENT_CODE_1,
            ASSESSMENT_TIME, SEEN_TIME, CONCLUSION_TIME, DEPARTURE_TIME, RECORD_IDENTIFIER, na.last = TRUE)
   
   
 ## Create order field
   
-  ecds_data[, order := 1:.N, by = .(ENCRYPTED_HESID, ARRIVAL_TIME)]
+  ecds_data[, order := 1:.N, by = .(ENCRYPTED_HESID, ae_ARRIVALTIME)]
   
 
 ## Keep only first record from ordering to get to one-to-one hes-id - arrival time pairs
@@ -81,22 +89,26 @@ source("R/cleaning_fns_etl.r")
   
 ## Add prefix to col names so can tell come from ECDS dataset
   
-  setnames(ecds_data_single_id_arrival, setdiff(colnames(ecds_data_single_id_arrival), "ENCRYPTED_HESID"),
-           paste("ecds", setdiff(colnames(ecds_data_single_id_arrival), "ENCRYPTED_HESID"), sep = "_"))
-  
-  
+  setnames(ecds_data_single_id_arrival, setdiff(colnames(ecds_data_single_id_arrival), c("ENCRYPTED_HESID", "ae_ARRIVALTIME")),
+           paste("ecds", setdiff(colnames(ecds_data_single_id_arrival), c("ENCRYPTED_HESID", "ae_ARRIVALTIME")), sep = "_"))
+
+
 ## Merge ECDS data into yas-ae data based on sharing a person-arrival time pair
   
   yas_ae_ecds_data <- merge(yas_ae_data,
                             ecds_data_single_id_arrival,
-                            by.x = c("ENCRYPTED_HESID", "ae_ARRIVALTIME"),
-                            by.y = c("ENCRYPTED_HESID", "ecds_ARRIVAL_TIME"),
+                            by = c("ENCRYPTED_HESID", "ae_ARRIVALTIME"),
                             all.x = TRUE)
   
   setnames(yas_ae_ecds_data, "ae_ARRIVALTIME", "ARRIVAL_TIME")
   
   stopifnot(yas_ae_ecds_data[, .N] == yas_ae_data[, .N])
   stopifnot(yas_ae_ecds_data[!is.na(ecds_RECORD_IDENTIFIER), .N, by = ecds_RECORD_IDENTIFIER][N > 1, .N] == 0)
+  
+
+## Find number of incidents that have HES A&E data but not ECDS data - 250 out of 101,522 with HES A&E
+  
+  yas_ae_ecds_data[!is.na(epr_id) & !is.na(AEKEY) & is.na(ecds_RECORD_IDENTIFIER), .N]
 
   
 ## Save fully linked data
