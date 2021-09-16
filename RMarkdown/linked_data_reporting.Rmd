@@ -20,10 +20,10 @@ library(ggplot2)
 
 ```{r read_in_data, echo=FALSE}
 
-  yas_data <- load("D:/SINEPOST/SINEPOSTDM/data/datasets/epr_tables_datetime_changes-2021-07-14-100514.rda")
-  ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/ae_processed_2021-07-12-110009.rds")
-  yas_ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/yas_ae_linked_2021-07-14-125617.rds")
-  study_id_encrypted_hesid_lookup <- readRDS("D:/SINEPOST/SINEPOSTDM/data/linkage/study_id_hesid_lookup_2021-07-12-105942.rds")
+  ##yas_data <- load("D:/SINEPOST/SINEPOSTDM/data/datasets/epr_tables_datetime_changes-2021-07-14-100514.rda")
+  ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/ae_processed_2021-08-02-152502.rds")
+  yas_ae_data <- readRDS("D:/SINEPOST/SINEPOSTDM/data/datasets/yas_ae_ecds_linked_2021-09-13-154308.rds")
+  study_id_encrypted_hesid_lookup <- readRDS("D:/SINEPOST/SINEPOSTDM/data/linkage/study_id_hesid_lookup_2021-08-02-152440.rds")
 
 ```
 
