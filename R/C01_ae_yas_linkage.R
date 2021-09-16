@@ -8,7 +8,7 @@ source("R/cleaning_fns_etl.r")
 ## Read in data
 
   ae_data <- readRDS("data/datasets/ae_processed_2021-08-02-152502.rds")
-  yas_data <- load("data/datasets/cohort_processed_epr_table_2021-08-03-094902.rda")
+  yas_data <- load("data/datasets/cohort_processed_epr_table_2021-09-14-161940.rda")
   
   
 ## Read in look up table created in A01
