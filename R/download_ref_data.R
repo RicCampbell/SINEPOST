@@ -5,7 +5,6 @@ library(readxl)
 source("R/cleaning_fns_etl.r")
 
 
-
 # Download and read in ONS file for postcode to LSOA11, RUC11, OAC --------
 
 # ONSPD Aug 2020
@@ -121,6 +120,36 @@ source("R/cleaning_fns_etl.r")
   unlink(c(temp, files))
   rm(site_data)
 
+  
+
+# Download SNOMED CT from TRUD (V31.3.0, 2021-01-27, ~930MB) -----------
+
+  trud_address <- "https://isd.digital.nhs.uk/trud3/api/v1/keys/4149673aafc1a67390597b8f681b4d6a3660968b/files/SNOMEDCT2/32.2.0/UK_SCT2CL/uk_sct2cl_32.2.0_20210707000001Z.zip"
+  
+  
+  temp <- tempfile(fileext = ".zip")
+  download.file(trud_address, temp, mode = "wb")
+  files <- unzip(temp, exdir = "D:/reference_data/temp/snomed")
+  
+  snomed_uk_desc <- fread("D:/reference_data/temp/snomed/SnomedCT_UKClinicalRF2_PRODUCTION_20210707T000001Z/Full/Terminology/sct2_Description_UKCLFull-en_GB1000000_20210707.txt",
+                          colClasses = "character")
+  snomed_int_desc <- fread("D:/reference_data/temp/snomed/SnomedCT_InternationalRF2_PRODUCTION_20210131T120000Z/Full/Terminology/sct2_Description_Full-en_INT_20210131.txt",
+                           colClasses = "character")
+  
+  setnames(snomed_uk_desc, make.names(tolower(colnames(snomed_uk_desc)), unique = TRUE))
+  setnames(snomed_int_desc, make.names(tolower(colnames(snomed_int_desc)), unique = TRUE))
+  
+  snomed_desc_full <- rbind(snomed_uk_desc, snomed_int_desc)
+  
+  save_time <- getDateTimeForFilename()
+  
+  write.csv(snomed_desc_full, paste0("D:/reference_data/full_trud_snomed_concepts_", save_time, ".csv"))
+  
+  
+## Remove temp file and link to unzipped file
+  
+  unlink(c(temp, files))
+  
 
 # Download TRUD data for ECDS ---------------------------------------------
 
@@ -172,20 +201,5 @@ source("R/cleaning_fns_etl.r")
   write.csv(ecds_arrival_source, paste0("D:/reference_data/ecds_arrival_source.csv"))
   
   
-## Chief Complaint - SNOMED CODE proper
-  # 
-  # ecds_arrival_mode <- data.table(read_excel("D:/reference_data/temp/snomed_ecds/SnomedCT_UKClinical_HumanReadableRefsets_20210707T000001Z/Emergencycarearrivalmode-999002981000000107-20210707.xlsx",
-  #                                            sheet = "999002981000000107",
-  #                                            range = cell_rows(2:11),
-  #                                            col_names = TRUE,
-  #                                            col_types = "text",
-  #                                            trim_ws = TRUE))
-  # 
-  # setnames(ecds_arrival_mode, make.names(tolower(colnames(ecds_arrival_mode)), unique = TRUE))
-  # 
-  # write.csv(ecds_arrival_mode, paste0("D:/reference_data/ecds_arrival_mode.csv"))
-  
-## Remove temp file and link to unzipped file and tidy up environment
-  
   unlink(c(temp, files))
-  rm(ecds_acuity_snomed)
+  rm(ecds_acuity_snomed, ecds_arrival_mode, ecds_arrival_source)
