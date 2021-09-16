@@ -59,16 +59,21 @@ source("R/cleaning_fns_etl.r")
 
 ## Route function works by taking origin and destination tables that both have to be sf object, NOT sfc points inside of a table, and going line by line across tables
 
-## For this have to split origin and destination into separate tables but keeping them in the correct order
-
-  incident_hospital_geo_data[, row_id := 1:.N]
-  
 ## Remove any rows now that have either no epr coords or receiving hospital coords as route function can not handle this
   
   incident_hospital_geo_data <- incident_hospital_geo_data[!(is.na(epr_lat) | is.na(receiving_hospital_lat))]
   
+
+## For this have to split origin and destination into separate tables but keeping them in the correct order
+  
+  incident_hospital_geo_data[, row_id := 1:.N]
+  
   origin <- incident_hospital_geo_data[, .(epr_postcode,epr_lat, epr_long, row_id)]
   destination <- incident_hospital_geo_data[, .(epr_receiving_hospital_postcode, receiving_hospital_lat, receiving_hospital_long, row_id)]
+  
+  ## Count for later
+  
+  origin_count <- origin[,.N]
 
 
 ## Create sf object from each lat-long co-ords, keep coords after conversion
@@ -110,7 +115,7 @@ source("R/cleaning_fns_etl.r")
   saveRDS(destination, file = paste("data/datasets/routes/routes", save_time, "destination_sf_objects.rds", sep = "_"))
 
 
-## Only keep routes information needed, do not nee to geographical data, and therefore can turn it back into a data table without concern
+## Only keep routes information needed, do not need geographical data, and therefore can turn it back into a data table without concern
   
   st_geometry(routes) <- NULL
   
@@ -123,7 +128,12 @@ source("R/cleaning_fns_etl.r")
                                     all.x = TRUE)[, row_id := NULL]
   
   
-  saveRDS(incident_hospital_routes, file = "data/datasets/incident_hospital_routes_", save_time, ".rds")
+  saveRDS(incident_hospital_routes, file = paste("data/datasets/incident_hospital_routes_", save_time, ".rds"))
+  
+  
+## Take count of the number of routes that were not able to be created - 604
+  
+  number_routes_not_created <- origin_count - routes[,.N]
   
   
 ## Could add in distance between points WITH traffic included from time of incident/arrival on scene
