@@ -1,6 +1,7 @@
 ## Script for preparing ECDS data to be linked to AE/YAS data, and to standardise cols that require it
 
 library(data.table)
+library(readxl)
 source("R/cleaning_fns_etl.r")
 source("R/standardise_functions.r")
 
@@ -91,20 +92,26 @@ source("R/standardise_functions.r")
                     AGE_RANGE = as.integer(AGE_RANGE))]
   
   
-## Merge in readable acuity labels from SNOMED codes and change col name
   
-  ecds_acuity_snomed <- fread("D:/reference_data/ecds_acuity_snomed.csv",
-                              colClasses = "character")
+## Read in full SNOMED table
   
-  ecds_data <- merge(ecds_data,
-                     ecds_acuity_snomed[, .(referencedcomponentid, preferredterm)],
-                     by.x = "ACUITY",
-                     by.y = "referencedcomponentid",
-                     all.x = TRUE)
-  
-  setnames(ecds_data, "preferredterm", "acuity_label")
+  snomed_codes <- fread("D:/reference_data/full_trud_snomed_concepts_2021-08-20-124429.csv",
+                        colClasses = "character")
   
   
+## Make list of all fields that are SNOMED codes
+  
+  snomed_fields <- c("ACUITY", "ARRIVAL_MODE", "ACCOMMODATION_STATUS", "ACCESSIBLE_INFORMATION_PROFESSIONAL_REQUIRED", "ATTENDANCE_SOURCE",
+                     "CHIEF_COMPLAINT", "PLACE_OF_INJURY", "INJURY_INTENT", "INJURY_ACTIVITY_STATUS", "INJURY_ACTIVITY_TYPE", "INJURY_MECHANISM",
+                     paste0("COMORBIDITIES_", 1:10), paste0("DIAGNOSIS_CODE_", 1:12), paste0("DIAGNOSIS_QUALIFIER_", 1:12), paste0("INVESTIGATION_CODE_", 1:12),
+                     paste0("TREATMENT_CODE_", 1:12), paste0("REFERRED_TO_SERVICE_", 1:4), "DISCHARGE_STATUS", "DISCHARGE_DESTINATION", "DISCHARGE_FOLLOW_UP", 
+                     "DISCHARGE_INFORMATION_GIVEN")
+  
+  snomed_fields_label <- paste0(snomed_fields, "_label")
+  
+  ecds_data[, (snomed_fields_label) := lapply(.SD, getSnomedLabel, ecds_data, snomed_codes), .SDcols = snomed_fields]
+ 
+   
 ## Create field for readable SITE label - read in trust data first
   
   trust_data <- readRDS("D:/reference_data/site_data.rds")
@@ -113,37 +120,9 @@ source("R/standardise_functions.r")
   ecds_data[!(SITE %chin% trust_data$org_code), site_label := NA]
   
   
-## Create field for readable Arrival mode  
+## Create field for readable attendance category (taken from NHS Data Model and Dictionary website)
   
-  ecds_arrival_mode <- fread("D:/reference_data/ecds_arrival_mode.csv",
-                             colClasses = "character")
-  
-  ecds_data <- merge(ecds_data,
-                     ecds_arrival_mode[, .(referencedcomponentid, preferredterm)],
-                     by.x = "ARRIVAL_MODE",
-                     by.y = "referencedcomponentid",
-                     aall.x = TRUE)
-  
-  setnames(ecds_data, "preferredterm", "arrival_mode_label")
-  
-  
-## Create field for readable Attendance source
-  
-  ecds_arrival_source <- fread("D:/reference_data/ecds_arrival_source.csv",
-                                  colClasses = "character")
-  
-  ecds_data <- merge(ecds_data,
-                     ecds_arrival_source[, .(referencedcomponentid, preferredterm)],
-                     by.x = "ATTENDANCE_SOURCE",
-                     by.y = "referencedcomponentid",
-                     all.x = TRUE)
-  
-  setnames(ecds_data, "preferredterm", "attendance_source_label")
-  
-
-## Create field for readable attendance category
-  
-  attendance_cat_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  attendance_cat_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                                   sheet = "ecds_attendance_cat",
                                                   col_names = TRUE,
                                                   col_types = "text",
@@ -156,24 +135,25 @@ source("R/standardise_functions.r")
                      all.x = TRUE)
   
   
-## Create field for readable department type
+## Create field for readable department type (taken from NHS Data Model and Dictionary website)
   
-  attendance_cat_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
-                                                  sheet = "ecds_dep_type",
-                                                  col_names = TRUE,
-                                                  col_types = "text",
-                                                  trim_ws = TRUE))
+  dep_type_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
+                                            sheet = "ecds_dep_type",
+                                            col_names = TRUE,
+                                            col_types = "text",
+                                            trim_ws = TRUE))
   
   ecds_data <- merge(ecds_data,
-                     attendance_cat_mapping,
+                     dep_type_mapping,
                      by.x = "DEPARTMENT_TYPE",
                      by.y = "department_type",
                      all.x = TRUE)
   
   
-## Remove all fields that have been made readable
+## Remove all fields that have been made readable, acuity left as needed later
   
-  ecds_data[, c("ARRIVAL_MODE", "ATTENDANCE_SOURCE", "ATTENDANCE_CATEGORY", "DEPARTMENT_TYPE") := NULL]
+  ecds_data[, c("ATTENDANCE_CATEGORY", "DEPARTMENT_TYPE") := NULL]
+  
   
 ## Read in study_id-HES_is look up table created in A01
   
