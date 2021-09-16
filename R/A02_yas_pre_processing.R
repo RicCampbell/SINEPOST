@@ -19,7 +19,7 @@ source("R/cleaning_fns_etl.r")
   
 ## Read in standardised field name list/start meta-data
   
-  yas_data_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  yas_data_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
                                             sheet = "yas_meta_data_sinepost",
                                             col_names = TRUE,
                                             col_types = "text",
@@ -77,12 +77,18 @@ source("R/cleaning_fns_etl.r")
   yas_data[, (yas_data_character_cols_names) := lapply(.SD, fn_removeBlanks), .SDcols = yas_data_character_cols_names]
   yas_data[, (yas_data_character_cols_names) := lapply(.SD, fn_removeValues, "n/a"), .SDcols = yas_data_character_cols_names]
   
+  drug_col_names <- colnames(epr_drug_fields_table)
+  epr_drug_fields_table[, (drug_col_names) := lapply(.SD, fn_removeBlanks), .SDcols = drug_col_names]
+  epr_drug_fields_table[, (drug_col_names) := lapply(.SD, fn_removeValues, "n/a"), .SDcols = drug_col_names]
+  
   
 ## Remove any rows that have no data other than epr_id
   
   all_cols_not_epr_id <- colnames(yas_data)[!(colnames(yas_data) %chin% "epr_id")]
+  drug_cols_not_epr_id <- colnames(epr_drug_fields_table)[!(colnames(epr_drug_fields_table) %chin% "epr_id")]
   
-  yas_data <- yas_data[rowSums(is.na(yas_data[, ..all_cols_not_epr_id])) != ncol(yas_data)]
+  yas_data <- yas_data[rowSums(is.na(yas_data[, ..all_cols_not_epr_id])) != length(all_cols_not_epr_id)]
+  epr_drug_fields_table <- epr_drug_fields_table[rowSums(is.na(epr_drug_fields_table[, ..drug_cols_not_epr_id])) != length(drug_cols_not_epr_id)]
   
 
 ## Change columns that have wrong data type, also update the reference table for use later
@@ -227,7 +233,7 @@ source("R/cleaning_fns_etl.r")
 ## Write over meta data spreadsheet as some col data types have been changed
   
   write.xlsx(yas_data_mapping,
-             file = "D:/reference_data/yas_meta_data_sinepost.xlsx",
+             file = "D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx",
              sheetName = "yas_meta_data_sinepost")
   
   
