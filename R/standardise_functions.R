@@ -95,5 +95,47 @@ getODSDetails <- function(ods_code) {
 }
 
 
+## Function for replacing snomed code field with readable label - reduces all conceptids to one row each with no clever selection
+
+getSnomedLabel <- function(field_contents, dt, snomed_code_term_table){
+  
+  # field_contents <- ecds_data$ACUITY
+  # dt <- ecds_data
+  # snomed_code_term_table <- snomed_codes
+    
+    dt_copy <- copy(dt)
+    
+    
+  ## Get list of all snomed codes in field, removing NA, and the matched concept ids in full snomed
+    
+    codes_present <- unique(field_contents)
+    
+    codes_present <- codes_present[!is.na(codes_present)]
+    
+    stopifnot(length(codes_present) != 0)
+    
+    relavent_snomed_codes <- snomed_code_term_table[conceptid %chin% codes_present]
+    
+    
+  ## Reduce to one line per concept id - want to keep the fully specified name, fsn, for each one, held in typeid
+    
+    relavent_snomed_codes <- relavent_snomed_codes[typeid == "900000000000003001"]
+                                                   
+  ## May still be more than one per conceptid, in this case, order and take first by being; active, effective time, and perfered case significance
+  
+    setorder(relavent_snomed_codes, conceptid, -active, -effectivetime, casesignificanceid, na.last = TRUE)
+  
+    relavent_snomed_codes <- relavent_snomed_codes[, order := 1:.N, by = conceptid][order == 1][, order := NULL]
+    
+    
+  ## Length and number of records not always going to be the same, dataset might not have instances of all options
+    
+    stopifnot(length(codes_present) <= relavent_snomed_codes[, .N])
+    stopifnot(setdiff(codes_present, relavent_snomed_codes$conceptid) == 0)
+    
+    field_lable_values <- relavent_snomed_codes$term[match(field_contents, relavent_snomed_codes$conceptid)]
+    
+    return(field_lable_values)
+}
 
 
