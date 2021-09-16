@@ -10,7 +10,7 @@ library(lubridate)
   epr_save_id <- "2021-05-11 131114"
   epr_table_names <- load(paste0("data/datasets/epr_tables-", epr_save_id, ".rda"))
   
-  yas_data_mapping <- data.table(read_excel("D:/reference_data/yas_meta_data_sinepost.xlsx",
+  yas_data_mapping <- data.table(read_excel("D:/reference_data/field_mapping_and_standardisation_and_meta_data.xlsx.xlsx",
                                             sheet = "yas_meta_data_sinepost",
                                             col_names = TRUE,
                                             col_types = "text",
