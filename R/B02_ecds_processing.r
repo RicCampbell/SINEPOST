@@ -16,7 +16,7 @@ source("R/standardise_functions.r")
   ecds[, (ecds_col_names) := lapply(.SD, fn_removeBlanks), .SDcols = ecds_col_names]
 
   
-# Remove all empty cols (98 in total)
+# Remove all empty cols
 
   empty_cols <- c("CHIEF_COMPLAINT_IS_INJURY_RELATED", "CONCLUSION_TIME_SINCE_ARRIVAL", "DECISION_TO_ADMIT_TIME_SINCE_ARRIVAL", "DEPARTURE_TIME_SINCE_ARRIVAL", 
                 paste0("DIAGNOSIS_FIRST_", 1:12), paste0("DIAGNOSIS_IS_AEC_RELATED_", 1:12), paste0("DIAGNOSIS_IS_ALLERGY_RELATED_", 1:12),
@@ -28,7 +28,7 @@ source("R/standardise_functions.r")
   stopifnot(all(sapply(ecds[, ..empty_cols], function(field) all(is.na(field)))))
   ecds[, (empty_cols) := NULL]
   
-# ecds[, .N] # 254181
+# ecds[, .N]
 # sapply(ecds, function(col) sum(is.na(col)))
 
 
