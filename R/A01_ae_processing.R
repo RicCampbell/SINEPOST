@@ -18,7 +18,7 @@ source("R/outcome_functions.R")
   ae_data[, (ae_col_names) := lapply(.SD, fn_removeBlanks), .SDcols = ae_col_names]
 
 
-# Remove all empty cols (10 in total)
+# Remove all empty cols
 
   empty_cols <- getNamesOfEmptyFields(ae_data)
   ae_data[, (empty_cols) := NULL]
@@ -31,7 +31,6 @@ source("R/outcome_functions.R")
   
 
 # Convert AE times to ISO times
-# Following fields have time but no date associated, could calculate from ..DUR fields, but range is 1-999+: "CONCLTIME", "DEPTIME", "INITTIME", "TRETTIME"
 
   ae_data[, ARRIVALTIME := lubridate::fast_strptime(paste(ARRIVALDATE, ARRIVALTIME),
                                                     format = "%Y-%m-%d %H%M",
@@ -47,7 +46,6 @@ source("R/outcome_functions.R")
 ## Check that all records have a HES_ID and study_id and AEKEY
 
   stopifnot(ae_data[is.na(ENCRYPTED_HESID) | is.na(STUDY_ID) | is.na(AEKEY), .N] == 0)
-
 
 
 
@@ -131,7 +129,6 @@ ae_data[, cluster_HESID:= NULL]
 
 
 
-
 # Create STUDY_ID to HESID look-up ----------------------------------------
 
 ## REQUIRE 1 HES_ID per study_id
@@ -145,7 +142,6 @@ study_id_encrypted_hesid_lookup <- unique(ae_data[, .(STUDY_ID, ENCRYPTED_HESID)
 
 save_time <- getDateTimeForFilename()
 saveRDS(study_id_encrypted_hesid_lookup, paste0("data/linkage/study_id_hesid_lookup_", save_time, ".rds"))
-
 
 
 
