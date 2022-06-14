@@ -64,7 +64,7 @@ source("R/cleaning_fns_etl.r")
            yas_data_mapping[field_group == "drugs" | source_field == "unique_epr_id", destination_field])
   
 
-  ## For testing - a save of this trimmed data has been saved
+  ## For testing - a save of this trimmed data has been made
     # yas_data <- yas_data[1:100000]
 
 
