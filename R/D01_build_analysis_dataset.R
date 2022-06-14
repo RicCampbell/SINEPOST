@@ -156,7 +156,6 @@ source("R/cleaning_fns_etl.r")
     
     
 # epr_airways_intervention_table ------------------------------------------
-## Max of 11 different airway types
 ## Check each _epr_id only has each airway type at most once first, then cast
   
   stopifnot(epr_airways_intervention_table[, .N, by = .(epr_id, airway_type)][N > 1, .N] == 0)
@@ -187,6 +186,7 @@ source("R/cleaning_fns_etl.r")
   setnames(epr_immobilisation_table_wide, setdiff(colnames(epr_immobilisation_table_wide), "epr_id"),
            paste("immob", setdiff(colnames(epr_immobilisation_table_wide), "epr_id"), sep = "_"))
 
+  
 # epr_advice_given_table --------------------------------------------------
 
 ## Check each epr_id only has each ipa_type at most once first, then cast
@@ -245,7 +245,7 @@ source("R/cleaning_fns_etl.r")
   
 ## Check each erp_id only has each psy_type at most once first, then cast
   
-  epr_psyc_observations_table[, .N, by = .(epr_id, psy_type)][order(N)]
+  stopifnot(epr_psyc_observations_table[, .N, by = .(epr_id, psy_type)][N > 1, .N] == 0)
   
   epr_psyc_observations_table_wide <- dcast(epr_psyc_observations_table, epr_id ~ psy_type, value.var = "psy_result")
   
@@ -355,43 +355,5 @@ source("R/cleaning_fns_etl.r")
   
   write.csv(analysis_dataset, file = paste0("data/data_for_analysis/cohort_", save_time, "_yas_ae_ecds_phys_obvs.csv"))
   saveRDS(analysis_dataset, file = paste0("data/data_for_analysis/cohort_", save_time, "_yas_ae_ecds_phys_obvs.rds"))
-  
-  
-
-  
-  
-### Rubbish I'm saving just briefly
-  
-  ## Label all subsequent-time pairs in order, first for when there isn't multiple timedate pairs, and then when there is
-  
-  setorder(epr_phys_observations_table, epr_id, observation_type, observations_recorded_time, na.last = TRUE)
-  
-  epr_phys_observations_table[observation_type == "subsequent", subsequent_order := 1:.N, by = .(epr_id)]
-  epr_phys_observations_table[observation_type == "subsequent", subsequent_time_count := .N, by = .(epr_id, observations_recorded_time)]
-  
-  ## Take subsequent phys obvs where first subsequent is unique timedate
-  
-  unique_first_subsequent_obvs <- epr_phys_observations_table[subsequent_order == 1 & subsequent_time_count == 1]
-  
-  stopifnot(unique_first_subsequent_obvs[, .N, by = epr_id][N > 1, .N] == 0)
-  
-  ## Take subsequent phys obvs where first subsequent is NOT unique timedate (== 1 means only have one line per epr_id so have to get all rows for these ids)
-  
-  multiple_first_subsequent_obvs_ids <- epr_phys_observations_table[subsequent_order == 1 & subsequent_time_count > 1, epr_id]
-  
-  multiple_first_subsequent_obvs <- epr_phys_observations_table[(epr_id %chin% multiple_first_subsequent_obvs_ids) & observation_type == "subsequent"]
-  
-  
-  ## Find most non-null set of obvs  
-  
-  multiple_first_subsequent_obvs[, null_fields := rowSums(is.na(multiple_first_subsequent_obvs))]
-  
-  setorder(multiple_first_subsequent_obvs, epr_id, observations_recorded_time, null_fields, na.last = TRUE)
-  
-  multiple_first_subsequent_obvs[, order := 1:.N, by = epr_id]  ##Still need tie breaker but yeah
-  
-  #multiple_first_subsequent_obvs[, .N, by = .(epr_id, observations_recorded_time, null_fields)][N > 1, uniqueN(epr_id)]
-  
-  unique_multiple_first_subsequent_obvs <- multiple_first_subsequent_obvs[order == 1]
   
   
