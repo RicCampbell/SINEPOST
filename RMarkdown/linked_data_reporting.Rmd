@@ -143,29 +143,10 @@ library(ggplot2)
   incidents_removed_last_day <- yas_hes_linkage[order == 1 & 
                                               incident_datetime >= floor_date(max(incident_datetime), unit = "day"), .N]
   
-  
-  
-### Distribution of epr-AE linked records within 24 of each other
-
-  # ggplot(smallest_time_diff_per_amb_inc_24_hour[incident_to_arrival_time_absolute <= 5], aes(x = incident_to_arrival_time_clipped)) +
-  #   geom_histogram(binwidth = 1) +
-  #   ggtitle("Distribution of time between ambulance incident and A&E arrival")
 
 
 ```
 
-```{r put_tables_together, echo = FALSE}
-## To report on:
-
-## Reattenders
-## Low Acuity numbers - use function
-
-
-
-# how many record in first day of YAS data that were useful
-# how many in last 6 hours of YAS data that were useful
-
-```
 
 ## AE Data
 
